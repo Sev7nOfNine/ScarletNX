@@ -791,6 +791,12 @@ snx_test_target(snx_codegen_test 90)
 target_link_libraries(snx_codegen_test PRIVATE snx_driver)
 add_test(NAME native_codegen COMMAND snx_codegen_test "${CMAKE_C_COMPILER}" "${PROJECT_SOURCE_DIR}")
 
+# A64 cases ported from rEden's dynarmic tests, on the AOT and interpreter paths (a64_ported_cases.h)
+add_executable(snx-test-a64-ported a64_ported.c)
+snx_test_target(snx-test-a64-ported 11)
+target_link_libraries(snx-test-a64-ported PRIVATE snx_driver)
+add_test(NAME a64_ported_cases COMMAND snx-test-a64-ported "${CMAKE_C_COMPILER}" "${PROJECT_SOURCE_DIR}")
+
 add_executable(snx-test-astc astc_decode.c "${PROJECT_SOURCE_DIR}/src/nx/gpu/texture/astc.c")
 snx_test_target(snx-test-astc 23)
 add_test(NAME astc_decode COMMAND snx-test-astc)
