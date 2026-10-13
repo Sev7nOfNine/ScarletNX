@@ -801,6 +801,11 @@ add_executable(snx-test-astc astc_decode.c "${PROJECT_SOURCE_DIR}/src/nx/gpu/tex
 snx_test_target(snx-test-astc 23)
 add_test(NAME astc_decode COMMAND snx-test-astc)
 
+# single blocks from rEden's ASTC decoder tests, against edenprobe's and astcenc's texels (astc_blocks.c)
+add_executable(snx-test-astc-blocks astc_blocks.c "${PROJECT_SOURCE_DIR}/src/nx/gpu/texture/astc.c")
+snx_test_target(snx-test-astc-blocks 23)
+add_test(NAME astc_blocks COMMAND snx-test-astc-blocks)
+
 # the shared fonts pl.c hands out when a game folder has none: the stand-ins compiled in (cmake/shared_fonts.cmake)
 if(NOT SNX_TOOLS_ONLY)
     add_executable(snx-test-pl-fonts pl_fonts.c "${CMAKE_BINARY_DIR}/generated/shared_fonts.c")
@@ -876,6 +881,10 @@ if(UNIX)
         add_test(NAME kernel_cores COMMAND snx-test-kernel-cores)
 endif()
 
+# EAC worked examples and edenprobe's blocks from rEden's decode_eac test (eac_blocks.c)
+add_executable(snx-test-eac-blocks eac_blocks.c "${PROJECT_SOURCE_DIR}/src/nx/gpu/texture/etc2.c")
+snx_test_target(snx-test-eac-blocks 23)
+add_test(NAME eac_blocks COMMAND snx-test-eac-blocks)
 
 if(UNIX)
     add_executable(snx-test-memory memory_accounting.c
