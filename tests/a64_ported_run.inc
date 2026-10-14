@@ -79,13 +79,25 @@ static void snx_a64p_preset_nce(CPU* c) {
     }
 }
 
+/* a u64 in hex as %0<digits>llx prints it, through two unsigned longs: C90 has no long long */
+static const char* snx_a64p_hex(u64 v, int digits) {
+    static char ring[4][24];
+    static unsigned at;
+    char* out = ring[at++ % 4];
+    unsigned long hi = (unsigned long)(v >> 32), lo = (unsigned long)(v & 0xFFFFFFFFu);
+    if (hi || digits > 8)
+        sprintf(out, "%0*lx%08lx", digits > 8 ? digits - 8 : 1, hi, lo);
+    else
+        sprintf(out, "%0*lx", digits, lo);
+    return out;
+}
+
 static void snx_a64p_expect(int ok, const char* what, u64 got_hi, u64 got, u64 want_hi, u64 want) {
     ++snx_a64p_checks;
     if (ok) return;
     ++snx_a64p_failures;
-    fprintf(stderr, "FAIL %s [%s]: %s is %016llx:%016llx, expected %016llx:%016llx\n", snx_a64p_name, snx_a64p_path,
-            what, (unsigned long long)got_hi, (unsigned long long)got, (unsigned long long)want_hi,
-            (unsigned long long)want);
+    fprintf(stderr, "FAIL %s [%s]: %s is %s:%s, expected %s:%s\n", snx_a64p_name, snx_a64p_path, what,
+            snx_a64p_hex(got_hi, 16), snx_a64p_hex(got, 16), snx_a64p_hex(want_hi, 16), snx_a64p_hex(want, 16));
 }
 
 /* one pass of the whole script on one path; returns the number of cases */
@@ -150,7 +162,7 @@ static int snx_a64p_script_run(int interp) {
                 snx_a64p_traps = 0;
                 break;
             case SNX_A64P_OP_X:
-                snprintf(what, sizeof(what), "X%u & %016llx", op->reg, (unsigned long long)op->b);
+                snprintf(what, sizeof(what), "X%u & %s", op->reg, snx_a64p_hex(op->b, 16));
                 snx_a64p_expect((c.x[op->reg] & op->b) == op->a, what, 0, c.x[op->reg] & op->b, 0, op->a);
                 break;
             case SNX_A64P_OP_V:
@@ -160,7 +172,7 @@ static int snx_a64p_script_run(int interp) {
                 break;
             case SNX_A64P_OP_PC: snx_a64p_expect(pc == op->a, "PC", 0, pc, 0, op->a); break;
             case SNX_A64P_OP_FPSR:
-                snprintf(what, sizeof(what), "FPSR & %08llx", (unsigned long long)op->b);
+                snprintf(what, sizeof(what), "FPSR & %s", snx_a64p_hex(op->b, 8));
                 snx_a64p_expect((c.fpsr & op->b) == op->a, what, 0, c.fpsr & op->b, 0, op->a);
                 break;
             case SNX_A64P_OP_NZCV: snx_a64p_expect(get_nzcv(&c) == op->a, "NZCV", 0, get_nzcv(&c), 0, op->a); break;
@@ -168,14 +180,14 @@ static int snx_a64p_script_run(int interp) {
                 u64 v = 0;
                 p = snx_a64p_at(op->a, 8);
                 if (p) memcpy(&v, p, 8);
-                snprintf(what, sizeof(what), "the 64 bits at %016llx", (unsigned long long)op->a);
+                snprintf(what, sizeof(what), "the 64 bits at %s", snx_a64p_hex(op->a, 16));
                 snx_a64p_expect(p && v == op->b, what, 0, v, 0, op->b);
                 break;
             }
             case SNX_A64P_OP_MEM_SAME: {
                 u8 *x = snx_a64p_at(op->a, op->reg), *y = snx_a64p_at(op->b, op->reg);
-                snprintf(what, sizeof(what), "%u bytes at %llx against %llx", op->reg, (unsigned long long)op->a,
-                         (unsigned long long)op->b);
+                snprintf(what, sizeof(what), "%u bytes at %s against %s", op->reg, snx_a64p_hex(op->a, 0),
+                         snx_a64p_hex(op->b, 0));
                 snx_a64p_expect(x && y && !memcmp(x, y, op->reg), what, 0, 0, 0, 0);
                 break;
             }
@@ -216,7 +228,7 @@ static int snx_a64p_script_run(int interp) {
                                     snx_a64p_want.v[n].d[0]);
                 }
                 for (k = 0; k < SNX_A64P_WINDOW && same; ++k) {
-                    snprintf(what, sizeof(what), "the byte at %llx", (unsigned long long)(snx_a64p_base + k));
+                    snprintf(what, sizeof(what), "the byte at %s", snx_a64p_hex(snx_a64p_base + k, 0));
                     same = snx_a64p_window[k] == snx_a64p_want_window[k];
                     if (!same) snx_a64p_expect(0, what, 0, snx_a64p_window[k], 0, snx_a64p_want_window[k]);
                 }
@@ -272,8 +284,8 @@ static int snx_a64p_minmax_run(void) {
                             else
                                 snx_a64p_minmax_aot[w](&c);
                             audit_host_restore(host);
-                            snprintf(what, sizeof(what), "V0[63:0] for %08llx, %08llx under FPCR %08x",
-                                     (unsigned long long)c.v[1].d[0], (unsigned long long)c.v[2].d[0], c.fpcr);
+                            snprintf(what, sizeof(what), "V0[63:0] for %s, %s under FPCR %08x",
+                                     snx_a64p_hex(c.v[1].d[0], 8), snx_a64p_hex(c.v[2].d[0], 8), c.fpcr);
                             snx_a64p_expect(c.v[0].d[0] == want && !snx_a64p_traps, what, 0, c.v[0].d[0], 0, want);
                             ++runs;
                         }
@@ -296,11 +308,10 @@ static int snx_a64p_fixed_run(void) {
         const SnxA64pFixed* f = &snx_a64p_fixed[r];
         snx_a64p_reset(&c, &rt);
         got = snx_fp_to_int(&c, f->input, f->fp_width, f->int_width, 0, 0, f->rm);
-        snprintf(what, sizeof(what), "%016llx to %d bits, rounding %d", (unsigned long long)f->input, f->int_width,
-                 f->rm);
+        snprintf(what, sizeof(what), "%s to %d bits, rounding %d", snx_a64p_hex(f->input, 16), f->int_width, f->rm);
         snx_a64p_expect(got == f->output, what, 0, got, 0, f->output);
         if (f->fpsr != ~0u) {
-            snprintf(what, sizeof(what), "FPSR after %016llx to %d bits", (unsigned long long)f->input, f->int_width);
+            snprintf(what, sizeof(what), "FPSR after %s to %d bits", snx_a64p_hex(f->input, 16), f->int_width);
             snx_a64p_expect(c.fpsr == f->fpsr, what, 0, c.fpsr, 0, f->fpsr);
         }
     }
