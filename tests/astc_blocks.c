@@ -142,9 +142,10 @@ static const SnxAstcbExpected snx_astcb_astcenc[] = {
 
 /* a block's texels as R | G << 8 | B << 16 | A << 24, row by row */
 static void decode(const SnxAstcbBlock* block, u32* texels) {
+    u32 i;
     u8 pixels[12 * 12 * 4];
     astc_decode_image(block->bits, block->width, block->height, block->width, block->height, pixels, 0);
-    for (u32 i = 0; i < block->width * block->height; ++i)
+    for (i = 0; i < block->width * block->height; ++i)
         texels[i] =
             pixels[4 * i] | (u32)pixels[4 * i + 1] << 8 | (u32)pixels[4 * i + 2] << 16 | (u32)pixels[4 * i + 3] << 24;
 }
@@ -156,10 +157,11 @@ static void fail(const char* what, unsigned index, u32 texel, u32 got, u32 want)
 
 /* every texel of block as want[i], or as fill when want is NULL */
 static void expect(const SnxAstcbBlock* block, const u32* want, u32 fill, const char* what, unsigned index) {
+    u32 i;
     u32 got[12 * 12];
     decode(block, got);
     ++checks;
-    for (u32 i = 0; i < block->width * block->height; ++i) {
+    for (i = 0; i < block->width * block->height; ++i) {
         u32 w = want ? want[i] : fill;
         if (got[i] != w) {
             fail(what, index, i, got[i], w);
@@ -170,12 +172,14 @@ static void expect(const SnxAstcbBlock* block, const u32* want, u32 fill, const 
 
 /* the error colour exact, every other channel within one */
 static void expect_near(const SnxAstcbBlock* block, const u32* want, const char* what, unsigned index) {
+    u32 i;
     u32 got[12 * 12];
     decode(block, got);
     ++checks;
-    for (u32 i = 0; i < block->width * block->height; ++i) {
+    for (i = 0; i < block->width * block->height; ++i) {
+        u32 c;
         int near = (got[i] == SNX_ASTCB_MAGENTA) == (want[i] == SNX_ASTCB_MAGENTA);
-        for (u32 c = 0; c < 32 && near; c += 8) {
+        for (c = 0; c < 32 && near; c += 8) {
             int d = (int)((got[i] >> c) & 0xFF) - (int)((want[i] >> c) & 0xFF);
             near = d >= -1 && d <= 1;
         }
@@ -188,10 +192,11 @@ static void expect_near(const SnxAstcbBlock* block, const u32* want, const char*
 
 /* a 4x4 LDR void extent: block mode 0xDFC, the four 13-bit coordinates, then the colour */
 static SnxAstcbBlock void_extent(u32 s0, u32 s1, u32 t0, u32 t1) {
+    u32 k;
     const u64 low = 0xDFCull | (u64)s0 << 12 | (u64)s1 << 25 | (u64)t0 << 38 | (u64)t1 << 51;
     const u64 high = 0xFFFF808040402020ull;
     SnxAstcbBlock block = {4, 4, {0}};
-    for (u32 k = 0; k < 8; ++k) {
+    for (k = 0; k < 8; ++k) {
         block.bits[k] = (u8)(low >> (8 * k));
         block.bits[8 + k] = (u8)(high >> (8 * k));
     }
@@ -199,14 +204,15 @@ static SnxAstcbBlock void_extent(u32 s0, u32 s1, u32 t0, u32 t1) {
 }
 
 int main(void) {
+    size_t i;
     const size_t illegal = sizeof(snx_astcb_illegal_at_each_exit) / sizeof(snx_astcb_illegal_at_each_exit[0]);
 
     /* guest data reaches every one of these exits; each fills its block with opaque magenta */
-    for (size_t i = 0; i < illegal; ++i)
+    for (i = 0; i < illegal; ++i)
         expect(&snx_astcb_illegal_at_each_exit[i], NULL, SNX_ASTCB_MAGENTA, "illegal block", (unsigned)i);
 
     /* an HDR endpoint mode is the error colour on its partition only */
-    for (size_t i = 0; i < sizeof(snx_astcb_hdr_partitions) / sizeof(snx_astcb_hdr_partitions[0]); ++i) {
+    for (i = 0; i < sizeof(snx_astcb_hdr_partitions) / sizeof(snx_astcb_hdr_partitions[0]); ++i) {
         expect_near(&snx_astcb_hdr_partitions[i].block, snx_astcb_hdr_partitions[i].texels, "HDR partition block",
                     (unsigned)i);
 #ifdef SNX_ASTCB_FINDINGS
@@ -216,14 +222,16 @@ int main(void) {
     }
 
     /* a trit or quint group cut short reads zeros: any unallocated bits decode the same */
-    for (size_t i = 0; i < sizeof(snx_astcb_cut_short) / sizeof(snx_astcb_cut_short[0]); ++i) {
+    for (i = 0; i < sizeof(snx_astcb_cut_short) / sizeof(snx_astcb_cut_short[0]); ++i) {
+        u32 value;
         const SnxAstcbCutShort* cut = &snx_astcb_cut_short[i];
         u32 own[16];
         decode(&cut->expected.block, own);
         expect_near(&cut->expected.block, cut->expected.texels, "cut-short block", (unsigned)i);
-        for (u32 value = 0; value < (1u << cut->unallocated); ++value) {
+        for (value = 0; value < (1u << cut->unallocated); ++value) {
+            u32 k;
             SnxAstcbBlock block = cut->expected.block;
-            for (u32 k = 0; k < cut->unallocated; ++k) {
+            for (k = 0; k < cut->unallocated; ++k) {
                 const u32 bit = cut->first_unallocated + k;
                 block.bits[bit / 8] =
                     (u8)((block.bits[bit / 8] & ~(1u << (bit % 8))) | ((value >> k) & 1u) << (bit % 8));
@@ -236,7 +244,7 @@ int main(void) {
     }
 
     /* more than 18 colour values, or too few colour bits, are illegal; exactly enough is legal */
-    for (size_t i = 0; i < sizeof(snx_astcb_illegal_colour) / sizeof(snx_astcb_illegal_colour[0]); ++i)
+    for (i = 0; i < sizeof(snx_astcb_illegal_colour) / sizeof(snx_astcb_illegal_colour[0]); ++i)
         expect(&snx_astcb_illegal_colour[i], NULL, SNX_ASTCB_MAGENTA, "illegal colour block", (unsigned)i);
     expect_near(&snx_astcb_colour_limits.block, snx_astcb_colour_limits.texels, "colour limits block", 0);
 #ifdef SNX_ASTCB_FINDINGS
@@ -245,6 +253,7 @@ int main(void) {
 
     /* a void extent needs each low coordinate below its high one, unless all four are ones */
     {
+        size_t i;
         static const u32 cases[][5] = {
             {0x1FFF, 0x1FFF, 0x1FFF, 0x1FFF, SNX_ASTCB_VOID_COLOUR}, /* all ones: no extent */
             {0x0100, 0x0200, 0x0300, 0x0400, SNX_ASTCB_VOID_COLOUR},
@@ -255,7 +264,7 @@ int main(void) {
             {0x1FFF, 0x1FFF, 0x1FFF, 0x1FFE, SNX_ASTCB_MAGENTA}, /* not all ones, so an extent out of order */
 #endif
         };
-        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        for (i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
             SnxAstcbBlock block = void_extent(cases[i][0], cases[i][1], cases[i][2], cases[i][3]);
             expect(&block, NULL, cases[i][4], "void extent", (unsigned)i);
         }
@@ -265,7 +274,7 @@ int main(void) {
     expect(&snx_astcb_rounding.block, snx_astcb_rounding.texels, 0, "rounding block", 0);
 
     /* 4 and 5-bit weights expand by bit replication; colour data cut short inside a trit or quint group reads zeros */
-    for (size_t i = 0; i < sizeof(snx_astcb_astcenc) / sizeof(snx_astcb_astcenc[0]); ++i) {
+    for (i = 0; i < sizeof(snx_astcb_astcenc) / sizeof(snx_astcb_astcenc[0]); ++i) {
         expect_near(&snx_astcb_astcenc[i].block, snx_astcb_astcenc[i].texels, "astcenc block", (unsigned)i);
 #ifdef SNX_ASTCB_FINDINGS
         expect(&snx_astcb_astcenc[i].block, snx_astcb_astcenc[i].texels, 0, "astcenc block", (unsigned)i);

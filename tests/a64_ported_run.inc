@@ -52,8 +52,9 @@ static void snx_a64p_reset(CPU* c, RtAPI* rt) {
 
 /* the window holds guest addresses base.. ; the guest's own base + address arithmetic lands in it */
 static void snx_a64p_memory(CPU* c, u64 base, int zeros) {
+    u32 i;
     snx_a64p_base = base;
-    for (u32 i = 0; i < SNX_A64P_WINDOW; ++i) snx_a64p_window[i] = zeros ? 0 : (u8)(base + i);
+    for (i = 0; i < SNX_A64P_WINDOW; ++i) snx_a64p_window[i] = zeros ? 0 : (u8)(base + i);
     c->mem = (u8*)((uintptr_t)snx_a64p_window - (uintptr_t)base);
 }
 static u8* snx_a64p_at(u64 address, u64 size) {
@@ -64,14 +65,15 @@ static u8* snx_a64p_at(u64 address, u64 size) {
 /* interpreter_visitor.cpp's Initial(), its region at address 0: no zero byte in memory, so a stored zero shows; SP
    ends in 0xee0, so SP stored in place of zero shows at every size */
 static void snx_a64p_preset_nce(CPU* c) {
+    u32 i;
     snx_a64p_memory(c, 0, 1);
-    for (u32 i = 0; i < SNX_A64P_WINDOW; ++i) snx_a64p_window[i] = (u8)(0x80 | (u32)(i * 0x9E3779B1u) >> 25);
-    for (u32 i = 0; i < 31; ++i) c->x[i] = 0xDEAD000000000000ull | i;
+    for (i = 0; i < SNX_A64P_WINDOW; ++i) snx_a64p_window[i] = (u8)(0x80 | (u32)(i * 0x9E3779B1u) >> 25);
+    for (i = 0; i < 31; ++i) c->x[i] = 0xDEAD000000000000ull | i;
     c->x[0] = 0x1000;
     c->x[1] = 0x1800;
     c->x[2] = 0x30;
     c->x[31] = 0x2EE0;
-    for (u32 i = 0; i < 32; ++i) {
+    for (i = 0; i < 32; ++i) {
         c->v[i].d[0] = 0x5555000000000000ull | i;
         c->v[i].d[1] = 0xAAAA000000000000ull | i;
     }
@@ -88,6 +90,7 @@ static void snx_a64p_expect(int ok, const char* what, u64 got_hi, u64 got, u64 w
 
 /* one pass of the whole script on one path; returns the number of cases */
 static int snx_a64p_script_run(int interp) {
+    size_t i;
     CPU c;
     RtAPI rt;
     size_t first = 0, count = 0;
@@ -96,10 +99,11 @@ static int snx_a64p_script_run(int interp) {
     char what[64];
     snx_a64p_path = interp ? "interpreter" : "AOT";
     snx_a64p_reset(&c, &rt);
-    for (size_t i = 0; snx_a64p_script[i].op != SNX_A64P_OP_END; ++i) {
+    for (i = 0; snx_a64p_script[i].op != SNX_A64P_OP_END; ++i) {
         const SnxA64pOp* op = &snx_a64p_script[i];
         u8* p;
         switch (op->op) {
+            u64 t;
             case SNX_A64P_OP_CASE:
                 snx_a64p_name = op->text;
                 snx_a64p_reset(&c, &rt);
@@ -133,10 +137,11 @@ static int snx_a64p_script_run(int interp) {
                 host = audit_host_save();
                 audit_fpcr(&c);
                 pc = op->a;
-                for (u64 t = 0; t < op->b; ++t) {
+                for (t = 0; t < op->b; ++t) {
+                    size_t k;
                     /* past the code, dynarmic's environment reads B . */
                     if ((pc & 3) || pc / 4 >= count) break;
-                    size_t k = first + (size_t)(pc / 4);
+                    k = first + (size_t)(pc / 4);
                     pc = interp ? snx_step(&c, (u32)snx_a64p_script[k].a, pc) : snx_a64p_aot[k](&c);
                 }
                 audit_host_restore(host);
@@ -196,19 +201,21 @@ static int snx_a64p_script_run(int interp) {
                 break;
             }
             case SNX_A64P_OP_SAME: {
+                u32 n;
+                u32 k;
                 int same = 1;
-                for (u32 n = 0; n < 32 && same; ++n) {
+                for (n = 0; n < 32 && same; ++n) {
                     snprintf(what, sizeof(what), n == 31 ? "SP" : "X%u", n);
                     same = c.x[n] == snx_a64p_want.x[n];
                     snx_a64p_expect(same, what, 0, c.x[n], 0, snx_a64p_want.x[n]);
                 }
-                for (u32 n = 0; n < 32 && same; ++n) {
+                for (n = 0; n < 32 && same; ++n) {
                     snprintf(what, sizeof(what), "V%u", n);
                     same = !memcmp(&c.v[n], &snx_a64p_want.v[n], 16);
                     snx_a64p_expect(same, what, c.v[n].d[1], c.v[n].d[0], snx_a64p_want.v[n].d[1],
                                     snx_a64p_want.v[n].d[0]);
                 }
-                for (u32 k = 0; k < SNX_A64P_WINDOW && same; ++k) {
+                for (k = 0; k < SNX_A64P_WINDOW && same; ++k) {
                     snprintf(what, sizeof(what), "the byte at %llx", (unsigned long long)(snx_a64p_base + k));
                     same = snx_a64p_window[k] == snx_a64p_want_window[k];
                     if (!same) snx_a64p_expect(0, what, 0, snx_a64p_window[k], 0, snx_a64p_want_window[k]);
@@ -226,6 +233,7 @@ static int snx_a64p_is_nan(u32 v) { return (v & 0x7F800000u) == 0x7F800000u && (
 
 /* fp_min_max.cpp's run_test, for each instruction on each path */
 static int snx_a64p_minmax_run(void) {
+    int interp;
     static const u32 bases[] = {0, SNX_A64P_FZ};
     const size_t rows = sizeof(snx_a64p_minmax) / sizeof(snx_a64p_minmax[0]);
     const size_t words = sizeof(snx_a64p_minmax_words) / sizeof(snx_a64p_minmax_words[0]);
@@ -233,15 +241,21 @@ static int snx_a64p_minmax_run(void) {
     int runs = 0;
     CPU c;
     RtAPI rt;
-    for (int interp = 0; interp < 2; ++interp) {
+    for (interp = 0; interp < 2; ++interp) {
+        size_t w;
         snx_a64p_path = interp ? "interpreter" : "AOT";
-        for (size_t w = 0; w < words; ++w) {
+        for (w = 0; w < words; ++w) {
+            size_t b;
+            int dn;
+            size_t r;
+            int swap;
             const SnxA64pMinMaxWord* word = &snx_a64p_minmax_words[w];
             snx_a64p_name = word->text;
-            for (size_t b = 0; b < 2; ++b)
-                for (int dn = 0; dn < 2; ++dn)
-                    for (size_t r = 0; r < rows; ++r)
-                        for (int swap = 0; swap < (snx_a64p_minmax[r].one_way ? 1 : 2); ++swap) {
+            for (b = 0; b < 2; ++b)
+                for (dn = 0; dn < 2; ++dn)
+                    for (r = 0; r < rows; ++r)
+                        for (swap = 0; swap < (snx_a64p_minmax[r].one_way ? 1 : 2); ++swap) {
+                            u64 host;
                             const SnxA64pMinMax* row = &snx_a64p_minmax[r];
                             u32 want = row->result[word->column];
                             if (dn && snx_a64p_is_nan(want)) want = 0x7FC00000u;
@@ -251,7 +265,7 @@ static int snx_a64p_minmax_run(void) {
                             c.v[0].d[0] = 42;
                             c.v[1].d[0] = swap ? row->b : row->a;
                             c.v[2].d[0] = swap ? row->a : row->b;
-                            u64 host = audit_host_save();
+                            host = audit_host_save();
                             audit_fpcr(&c);
                             if (interp)
                                 snx_step(&c, word->word, 0);
@@ -270,16 +284,18 @@ static int snx_a64p_minmax_run(void) {
 
 /* FPToFixed.cpp, through the helper every FCVT* conversion to an integer calls */
 static int snx_a64p_fixed_run(void) {
+    size_t r;
     const size_t rows = sizeof(snx_a64p_fixed) / sizeof(snx_a64p_fixed[0]);
     char what[96];
     CPU c;
     RtAPI rt;
     snx_a64p_path = "snx_fp_to_int";
     snx_a64p_name = "FPToFixed";
-    for (size_t r = 0; r < rows; ++r) {
+    for (r = 0; r < rows; ++r) {
+        u64 got;
         const SnxA64pFixed* f = &snx_a64p_fixed[r];
         snx_a64p_reset(&c, &rt);
-        u64 got = snx_fp_to_int(&c, f->input, f->fp_width, f->int_width, 0, 0, f->rm);
+        got = snx_fp_to_int(&c, f->input, f->fp_width, f->int_width, 0, 0, f->rm);
         snprintf(what, sizeof(what), "%016llx to %d bits, rounding %d", (unsigned long long)f->input, f->int_width,
                  f->rm);
         snx_a64p_expect(got == f->output, what, 0, got, 0, f->output);
@@ -293,23 +309,25 @@ static int snx_a64p_fixed_run(void) {
 
 /* the steps a64_ported.c emitted are for these cases: a test binary older than a64_ported_cases.h is not */
 static int snx_a64p_current(void) {
+    size_t i;
     const size_t ops = sizeof(snx_a64p_script) / sizeof(snx_a64p_script[0]);
     const size_t words = sizeof(snx_a64p_minmax_words) / sizeof(snx_a64p_minmax_words[0]);
     int same = ops == sizeof(snx_a64p_emitted) / sizeof(snx_a64p_emitted[0]) &&
                words == sizeof(snx_a64p_emitted_minmax) / sizeof(snx_a64p_emitted_minmax[0]);
-    for (size_t i = 0; same && i < ops; ++i)
+    for (i = 0; same && i < ops; ++i)
         same = snx_a64p_emitted[i] == (snx_a64p_script[i].op == SNX_A64P_OP_CODE ? (u32)snx_a64p_script[i].a : 0);
-    for (size_t i = 0; same && i < words; ++i) same = snx_a64p_emitted_minmax[i] == snx_a64p_minmax_words[i].word;
+    for (i = 0; same && i < words; ++i) same = snx_a64p_emitted_minmax[i] == snx_a64p_minmax_words[i].word;
     if (!same) fputs("FAIL: the test binary predates a64_ported_cases.h; rebuild snx-test-a64-ported\n", stderr);
     return same;
 }
 
 int main(void) {
+    int cases, minmax, fixed;
     if (!snx_a64p_current()) return 1;
-    int cases = snx_a64p_script_run(0);
+    cases = snx_a64p_script_run(0);
     snx_a64p_script_run(1);
-    int minmax = snx_a64p_minmax_run();
-    int fixed = snx_a64p_fixed_run();
+    minmax = snx_a64p_minmax_run();
+    fixed = snx_a64p_fixed_run();
     printf("A64 cases ported from rEden's tests: %d cases on the AOT and interpreter paths, %d min/max runs, "
            "%d conversions, %d checks, %d failed\n",
            cases, minmax, fixed, snx_a64p_checks, snx_a64p_failures);

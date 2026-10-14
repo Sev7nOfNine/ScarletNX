@@ -30,7 +30,7 @@ enum {
     SNX_A64P_OP_WANT_X,   /* expected X[reg] = a (31 is SP) */
     SNX_A64P_OP_WANT_V,   /* expected V[reg] = a (low), b (high) */
     SNX_A64P_OP_WANT_MEM, /* expected: the low reg bytes of b at address a */
-    SNX_A64P_OP_SAME,     /* expect every X, SP, every V and the whole memory window as expected */
+    SNX_A64P_OP_SAME      /* expect every X, SP, every V and the whole memory window as expected */
 };
 
 typedef struct {
