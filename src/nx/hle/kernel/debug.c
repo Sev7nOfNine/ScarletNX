@@ -91,6 +91,13 @@ void kernel_load_symbols(void) {
     if (g_nsyms) qsort(g_syms, g_nsyms, sizeof *g_syms, sym_cmp);
     LOG("symbols: %u functions named\n", g_nsyms);
 }
+/* the address of the function the game exports as name (nvn_trace.c finds nvnBootstrapLoader so), 0 when none */
+u64 kernel_find_symbol_exact(const char* name) {
+    size_t len = strlen(name) + 1;
+    for (u32 i = 0; i < g_nsyms; i++)
+        if (readable(g_syms[i].name, len) && !memcmp(GP(g_syms[i].name), name, len)) return g_syms[i].addr;
+    return 0;
+}
 /* the length of the guest string at a, at most max, when it is readable and ends within max; else 0 */
 static int gstr(u64 a, int max) {
     int n = 0;

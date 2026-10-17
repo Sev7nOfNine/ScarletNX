@@ -3,7 +3,7 @@
 /* guest threads (each on a host thread of its own), the thread table, process exit, and the four cores the threads
    take turns on */
 #include "nx/hle/kernel/kernel_int.h"
-#include "nx/gpu/renderer.h"
+#include "nx/runtime/main.h"
 #include "nx/runtime/arm.h"
 #include "nx/runtime/loader.h"
 
@@ -353,11 +353,10 @@ void kernel_run_main(u64 entry, u64 stack_size, int prio, int core) {
     kthread_start(t);
 }
 
-/* svcExitProcess, and the game's end however it comes: what the runtime keeps across runs is saved first, as the
-   process ends without joining anything */
+/* svcExitProcess, and the game's end however it comes: what the runtime keeps across runs is saved first
+   (snx_save_before_exit, which also reports SNX_NVN_TRACE), as the process ends without joining anything */
 void process_exit(int code) {
     LOG("The game exited (code %d)\n", code);
-    save_hints();
-    if (g_renderer && g_renderer->save) g_renderer->save();
+    snx_save_before_exit();
     plat_exit_now(code);
 }
