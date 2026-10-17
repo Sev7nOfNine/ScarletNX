@@ -204,7 +204,8 @@ int main(void) {
     maxwell3d_method(&ch, 0x509, 0, 1);
     maxwell3d_method(&ch, 0x50A, 0, 1);
     maxwell3d_method(&ch, 0x44, 0, 1);
-    if (ndraws != 1 || nbarriers != 6 || memcmp(barriers, (int[]){0, 1, 2, 3, 3, 4}, sizeof(int) * 6) || signals != 2) {
+    /* neither the texture cache invalidation nor WAIT_FOR_IDLE lands shader results: the game observes neither */
+    if (ndraws != 1 || nbarriers != 6 || memcmp(barriers, (int[]){0, 1, 2, 3, 3, 4}, sizeof(int) * 6) || signals) {
         fprintf(stderr, "FAIL: Maxwell barriers or idle were not dispatched in stream order\n");
         failures++;
     }

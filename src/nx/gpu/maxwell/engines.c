@@ -255,7 +255,11 @@ void maxwell3d_method(GpuChannel* ch, u32 m, u32 v, int last) {
             if (g_renderer_up && g_renderer->samples_enable) g_renderer->samples_enable(ch, v & 1);
             break;
         case 0x44: /* WAIT_FOR_IDLE */
-            gpu_signal_point();
+            /* The idle wait and the texture cache invalidation below order GPU work, which method_barrier gives
+               Vulkan. Neither is anything the game sees, so pending shader results don't land here: whatever reads
+               guest memory lands the results over the bytes it reads (gmem_need, through gmem_ptr for textures and
+               render targets), and a release lands them before the game can see it (release.c). Landing every
+               result at each of them cost TotK several vk_finish waits a frame */
             if (g_renderer_up && g_renderer->method_barrier) g_renderer->method_barrier(4);
             break;
         case 0x378: /* FRAGMENT_BARRIER */
@@ -265,7 +269,6 @@ void maxwell3d_method(GpuChannel* ch, u32 m, u32 v, int last) {
         case 0x3DD: /* INVALIDATE_TEXTURE_DATA_CACHE */
         case 0x509: /* INVALIDATE_SAMPLER_CACHE_NO_WFI */
         case 0x50A: /* INVALIDATE_TEXTURE_HEADER_CACHE_NO_WFI */
-            if (m == 0x3DD) gpu_signal_point();
             if (g_renderer_up && g_renderer->method_barrier) g_renderer->method_barrier(m == 0x3DD ? 2 : 3);
             break;
         case 0x45: ch->mme_upload_ptr = v; break;
