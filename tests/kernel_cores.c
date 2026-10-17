@@ -18,7 +18,6 @@ u64 g_sysres_size;
 int g_verbose;
 PMutex g_klock = PMUTEX_INIT;
 const RtAPI g_rtapi;
-GuestFn snx_interp_entry;
 const SnxArmModule* g_arm_mod; /* a 64-bit game */
 const SnxArmRt g_arm_rt;
 void arm_thread_run(KThread* t) { (void)t; }
