@@ -286,8 +286,8 @@ int main(void) {
     CHECK(settle(a, 1) == 1 && a->core == 1 && settle(w, 0) == 0, "yield -1: 50 on %d, 44 on %d", on_core(w),
           on_core(a));
     pthread_join(h2, NULL);
+    pthread_join(h, NULL); /* 50's own move, into core 0's CPUs, is the third: done once its enter returns */
     CHECK(moved(0, "1 4 7 10", 3), "yield -1: 44 on core 1's CPUs");
-    pthread_join(h, NULL);
     core_leave(w);
     core_leave(a);
 
