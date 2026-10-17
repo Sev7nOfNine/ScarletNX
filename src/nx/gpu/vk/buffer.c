@@ -57,18 +57,76 @@ typedef struct GfxOut {
     u8* ptr;
     u8* org;
     u64* pages; /* sorted guest CPU pages behind this GPU virtual range */
+    u64* vmap;  /* the same pages in the range's order, ~0 for an unmapped one */
     u32 npages;
+    /* earlier pending results were copied into buf on the GPU when it was made (gfx_overlay, atlas_fill): org holds
+       guest memory without them until each lands (out_rebase) */
+    int composed;
     struct GfxOut* next;
 } GfxOut;
 static GfxOut *g_prep, *g_prep_tail, *g_out, *g_out_tail;
-/* an output with its page list and its original bytes after it, in one block */
+/* an output with its page lists and its original bytes after it, in one block */
 static GfxOut* gfx_out_new(u32 npages, u32 len) {
-    GfxOut* o = calloc(1, sizeof *o + (size_t)npages * sizeof *o->pages + len);
+    GfxOut* o = calloc(1, sizeof *o + 2 * (size_t)npages * sizeof *o->pages + len);
     if (!o) return NULL;
     o->pages = (u64*)(o + 1);
+    o->vmap = o->pages + npages;
     o->npages = npages;
-    o->org = (u8*)(o->pages + npages);
+    o->org = (u8*)(o->vmap + npages);
     return o;
+}
+static int page_cmp(const void* a, const void* b);
+/* o's page lists for its range at gva, as the GMMU maps it now */
+static void out_map(GfxOut* o, u64 gva) {
+    for (u32 i = 0; i < o->npages; i++) {
+        u64 cpu = gmmu_translate((gva & ~0xFFFull) + (u64)i * 0x1000);
+        o->vmap[i] = o->pages[i] = cpu ? cpu >> 12 : ~0ull;
+    }
+    qsort(o->pages, o->npages, sizeof *o->pages, page_cmp);
+}
+/* The bytes of [gva, gva + len) that are bytes of o: the same guest memory, through the same GPU address or another
+   one mapping the same pages (an unmapped page only through the same address). rmap is the range's pages
+   (range_map). fn(user, at, from, n) gets each run: n bytes at gva + at that are o's bytes at o->addr + from */
+typedef void (*SpanFn)(void* user, u64 at, u64 from, u64 n);
+/* the run of R's page gr ([ra, rb) of it) that o's page j holds, if any */
+static void out_span_page(const GfxOut* o, u64 j, u64 gva, u64 gr, u64 ra, u64 rb, SpanFn fn, void* user) {
+    u64 go = (o->addr & ~4095ull) + j * 4096, oend = o->addr + o->size;
+    u64 oa = go > o->addr ? 0 : o->addr - go, ob = go + 4096 < oend ? 4096 : oend - go;
+    u64 a = ra > oa ? ra : oa, b = rb < ob ? rb : ob;
+    if (a < b) fn(user, gr + a - gva, go + a - o->addr, b - a);
+}
+static void out_spans(const GfxOut* o, u64 gva, u64 len, const u64* rmap, SpanFn fn, void* user) {
+    u64 rbase = gva & ~4095ull, rend = gva + len, obase = o->addr & ~4095ull, n = o->npages;
+    for (u64 i = 0, gr = rbase; gr < rend; i++, gr += 4096) {
+        u64 ra = gr > gva ? 0 : gva - gr, rb = gr + 4096 < rend ? 4096 : rend - gr, page = rmap[i];
+        u64 same = gr >= obase && gr - obase < n * 4096 ? (gr - obase) >> 12 : n; /* o's page at this address */
+        const u64* hit;
+        if (page == ~0ull) { /* unmapped: only o's page at the same address, if that is unmapped too */
+            if (same < n && o->vmap[same] == ~0ull) out_span_page(o, same, gva, gr, ra, rb, fn, user);
+            continue;
+        }
+        hit = bsearch(&page, o->pages, n, sizeof page, page_cmp);
+        if (!hit) continue;
+        if ((hit == o->pages || hit[-1] != page) && (hit + 1 == o->pages + n || hit[1] != page) && same < n &&
+            o->vmap[same] == page) {
+            out_span_page(o, same, gva, gr, ra, rb, fn, user); /* o holds the page once, at this address */
+            continue;
+        }
+        for (u64 j = 0; j < n; j++) /* elsewhere in o, or more than once */
+            if (o->vmap[j] == page) out_span_page(o, j, gva, gr, ra, rb, fn, user);
+    }
+}
+/* the guest CPU page behind each GPU page of [gva, gva + len), ~0 for an unmapped one: in local when 16 do, malloc'd
+   otherwise (NULL out of memory) */
+static u64* range_map(u64 gva, u64 len, u64 local[16]) {
+    u64 base = gva & ~4095ull, n = (gva + len - base + 4095) >> 12;
+    u64* map = n <= 16 ? local : malloc(n * sizeof *map);
+    if (!map) return NULL;
+    for (u64 i = 0; i < n; i++) {
+        u64 cpu = gmmu_translate(base + i * 4096);
+        map[i] = cpu ? cpu >> 12 : ~0ull;
+    }
+    return map;
 }
 
 /* Suppress recursive lookups by the landing thread. Other readers still take vk_lock and wait for landing. */
@@ -92,6 +150,46 @@ void vk_buf_writable_commit(void) {
     g_prep = g_prep_tail = NULL;
     g_gfx_any = 1;
 }
+/* whether two sorted page lists share a page */
+static int pages_meet(const GfxOut* a, const GfxOut* b) {
+    u32 i = 0, j = 0;
+    while (i < a->npages && j < b->npages) {
+        if (a->pages[i] == ~0ull || b->pages[j] == ~0ull) return 0; /* unmapped pages sort last */
+        if (a->pages[i] < b->pages[j])
+            i++;
+        else if (a->pages[i] > b->pages[j])
+            j++;
+        else
+            return 1;
+    }
+    return 0;
+}
+/* e has landed: a later composed result o read e's result where they share guest memory, not the bytes org holds
+   there, so the bytes e changed become o's original bytes. Then o lands only what its own draw changed, and doesn't
+   take e's landing for a guest write and drop its own writes over it (vk_write_changed). Either GPU range may map
+   the shared pages at other addresses: they meet through the GMMU, whose mappings stay put while results are pending
+   (a mapping change lands them first) */
+typedef struct {
+    const GfxOut* e;
+    GfxOut* o;
+} Rebase;
+static void rebase_span(void* user, u64 at, u64 from, u64 n) {
+    const Rebase* r = user;
+    for (u64 k = 0; k < n; k++)
+        if (r->e->ptr[from + k] != r->e->org[from + k]) r->o->org[at + k] = r->e->ptr[from + k];
+}
+static void out_rebase(const GfxOut* e, GfxOut* o) {
+    Rebase r = {e, o};
+    out_spans(e, o->addr, o->size, o->vmap, rebase_span, &r);
+}
+/* the composed results recorded after e, in this frame's landed list (rest), later frames' and the draw being set up */
+static void out_rebase_later(const GfxOut* e, GfxOut* rest) {
+    GfxOut* lists[3] = {rest, g_out, g_prep};
+    for (int l = 0; l < 3; l++)
+        for (GfxOut* o = lists[l]; o; o = o->next)
+            if (o->composed && pages_meet(e, o)) out_rebase(e, o);
+}
+
 /* The frame fence has signaled. Its stage allocations still exist here; cmd.c frees them only after this call. */
 void vk_buf_frame_done(u64 frame) {
     GfxOut *done = NULL, *done_tail = NULL;
@@ -123,6 +221,7 @@ void vk_buf_frame_done(u64 frame) {
             invalidated = o->mem;
         }
         vk_write_changed(o->addr, o->ptr, o->org, o->size);
+        out_rebase_later(o, done);
         if (copy_stats_on()) {
             g_wb_outputs++;
             g_wb_bytes += o->size;
@@ -362,17 +461,40 @@ static int out_copyable(const GfxOut* o, u64 lo, u64 hi) {
     const u8* host = gmem_ptr_untracked(lo, hi - lo);
     return o->frame_id == vk_frame_id() && host && !memcmp(host, o->org + (lo - o->addr), hi - lo);
 }
-/* copies the pending results over [gva, gva + len) into dst at dst_off, which holds guest memory's bytes (after
-   gfx_gpu_src said they can be) */
+/* the same for each run of o's bytes in [gva, gva + len), through whichever GPU address maps them (out_spans) */
+typedef struct {
+    const GfxOut* o;
+    u64 gva;
+    int ok;
+} Copyable;
+static void copyable_span(void* user, u64 at, u64 from, u64 n) {
+    Copyable* c = user;
+    const u8* host = c->ok ? gmem_ptr_untracked(c->gva + at, n) : NULL;
+    if (!host || memcmp(host, c->o->org + from, n)) c->ok = 0;
+}
+typedef struct {
+    CopyBatch* c;
+    const GfxOut* o;
+    u64 dst_off;
+} Overlay;
+static void overlay_span(void* user, u64 at, u64 from, u64 n) {
+    const Overlay* v = user;
+    copy_add(v->c, v->o->buf, v->o->off + from, v->dst_off + at, n);
+}
+/* copies the pending results' bytes in [gva, gva + len), through any GPU address, into dst at dst_off, which holds
+   guest memory's bytes (after gfx_gpu_src said they can be) */
 static void gfx_overlay(u64 gva, u64 len, VkBuffer dst, u64 dst_off) {
     CopyBatch c;
+    u64 local[16], *rmap = range_map(gva, len, local);
+    if (!rmap) fatal("Out of memory composing a draw's storage buffer");
     memset(&c, 0, sizeof c);
     c.dst = dst;
     for (GfxOut* o = g_out; o; o = o->next) {
-        u64 lo = gva > o->addr ? gva : o->addr, hi = gva + len < o->addr + o->size ? gva + len : o->addr + o->size;
-        if (lo < hi) copy_add(&c, o->buf, o->off + (lo - o->addr), dst_off + (lo - gva), hi - lo);
+        Overlay v = {&c, o, dst_off};
+        out_spans(o, gva, len, rmap, overlay_span, &v);
     }
     copy_end(&c);
+    if (rmap != local) free(rmap);
 }
 
 /* A draw or dispatch can read an earlier one's storage result without a round trip through guest RAM. Returns 1 with
@@ -385,24 +507,26 @@ static int gfx_gpu_src(u64 gva, u64 len, VkBuffer* buf, u64* off, int writable) 
     GfxOut* match = NULL;
     int count = 0;
     RangePages q;
+    u64 local[16], *rmap = NULL;
     if (!g_gfx_any || g_out_landing || !gva || !len) return 0;
     if (g_cs_any) vk_compute_mem_need(gva, len);
     range_pages(gva, len, &q);
     for (GfxOut* o = g_out; o; o = o->next) {
         u64 lo = gva > o->addr ? gva : o->addr, hi = gva + len < o->addr + o->size ? gva + len : o->addr + o->size;
-        if (lo >= hi) {
-            if (!backing_overlap(&q, o)) continue;
-            land_reason(WB_DRAW);
-            return 0;
-        }
-        if (!out_copyable(o, lo, hi)) {
+        if (lo >= hi && !backing_overlap(&q, o)) continue;
+        Copyable c = {o, gva, o->frame_id == vk_frame_id()};
+        if (c.ok && !rmap && !(rmap = range_map(gva, len, local))) c.ok = 0;
+        if (c.ok) out_spans(o, gva, len, rmap, copyable_span, &c);
+        if (!c.ok) {
             if (copy_stats_on()) g_wb_draw_miss[o->frame_id != vk_frame_id() ? 0 : 2]++;
+            if (rmap && rmap != local) free(rmap);
             land_reason(WB_DRAW);
             return 0;
         }
         match = o;
         count++;
     }
+    if (rmap && rmap != local) free(rmap);
     if (!count) return 0;
     if (count == 1 && gva >= match->addr && gva + len <= match->addr + match->size &&
         !((match->off + (gva - match->addr)) & (vk_stage_align() - 1)) &&
@@ -597,24 +721,20 @@ int vk_buf_copy_writable(u64 gva, u32 len, VkBuffer* buf, u64* off) {
         }
     int pending = gfx_gpu_src(gva, len, buf, off, 1);
     if (pending == 1) return 1;
-    if (pending == 2) {
-        /* A fresh writable snapshot must include older GPU results in its original
-           bytes, otherwise reconciliation mistakes their landing for a CPU write. */
-        land_reason(WB_DRAW);
-    }
     o = gfx_out_new((u32)(((gva & 0xFFF) + len + 0xFFF) >> 12), len);
     if (!o) return 0;
-    const u8* src = guest_bytes(gva, len);
-    if (!src) {
-        free(o);
-        return 0;
+    if (pending == 2) { /* guest memory's bytes, with the earlier results copied over them below (out_rebase) */
+        read_untracked(gva, o->org, len);
+        o->composed = 1;
+    } else {
+        const u8* src = guest_bytes(gva, len);
+        if (!src) {
+            free(o);
+            return 0;
+        }
+        memcpy(o->org, src, len);
     }
-    memcpy(o->org, src, len);
-    for (u32 i = 0; i < o->npages; i++) {
-        u64 cpu = gmmu_translate((gva & ~0xFFFull) + (u64)i * 0x1000);
-        o->pages[i] = cpu ? cpu >> 12 : ~0ull;
-    }
-    qsort(o->pages, o->npages, sizeof *o->pages, page_cmp);
+    out_map(o, gva);
     u64 align = vk_stage_align();
     if (align < g_vk.props.limits.nonCoherentAtomSize) align = g_vk.props.limits.nonCoherentAtomSize;
     o->ptr = vk_stage_output(len, align, buf, off, &o->mem);
@@ -715,7 +835,7 @@ static u32 draw_page_index(const DrawPage* p, size_t n, u64 key) {
     }
     return (u32)lo;
 }
-static int draw_output_page(const DrawPage* p, u8* ptr, VkBuffer buf, u64 off, VmaAllocation mem) {
+static int draw_output_page(const DrawPage* p, u8* ptr, VkBuffer buf, u64 off, VmaAllocation mem, int composed) {
     GfxOut* o;
     const u8* page;
     if (p->key & (1ull << 63)) return 1;
@@ -729,7 +849,8 @@ static int draw_output_page(const DrawPage* p, u8* ptr, VkBuffer buf, u64 off, V
         memcpy(o->org, page, 4096);
     else
         memset(o->org, 0, 4096);
-    o->pages[0] = p->key;
+    o->pages[0] = o->vmap[0] = p->key;
+    o->composed = composed;
     o->addr = p->gva;
     o->size = 4096;
     o->frame = vk_submit_number();
@@ -745,20 +866,29 @@ static int draw_output_page(const DrawPage* p, u8* ptr, VkBuffer buf, u64 off, V
     g_prep_tail = o;
     return 1;
 }
-/* Writable aliases share one page atlas. Land earlier overlapping results before
-   taking its guest baseline, so later reconciliation cannot mistake those results
-   for intervening CPU writes. Landing may free the whole output list. */
-static void atlas_fill(const DrawPage* p, size_t unique, u8* ptr, VkBuffer atlas, u64 atlas_off) {
+/* An atlas page starts from guest memory, and the pending results over it are copied in on the GPU in the order they
+   were recorded, after the shaders that wrote them: an aliased draw doesn't wait for earlier results to land in guest
+   memory (TotK drew about four a frame, each landing everything with a vk_finish). Its outputs keep guest memory as
+   their original bytes until those results land (out_rebase). Compute results that haven't landed land for the
+   atlas's pages alone. A result whose original bytes the guest has written since can't be copied whole: it lands
+   first, as in gfx_gpu_src, which submits, and the draw starts its setup over. 1 when a result was copied in */
+static int atlas_fill(const DrawPage* p, size_t unique, u8* ptr, VkBuffer atlas, u64 atlas_off) {
     CopyBatch c;
     size_t i;
+    int landed = 0, composed = 0;
     if (g_cs_any)
         for (i = 0; i < unique; i++)
             if (!(p[i].key & (1ull << 63))) vk_compute_mem_need(p[i].gva, 4096);
-    /* Atlas pages can be written through any binding. Land overlapping results
-       before taking their baseline, including aliases through another GPU VA.
-       Landing frees the output list, so never traverse it across this call. */
-    for (i = 0; i < unique; i++)
-        if (!(p[i].key & (1ull << 63))) mem_need_reason(p[i].gva, 4096, WB_DRAW);
+    /* first, so a landing comes before memory is read; it frees the list, and leaves nothing to copy */
+    for (GfxOut* o = g_out; o && !landed && !g_out_landing; o = o->next)
+        for (u64 g = o->addr & ~4095ull, e = o->addr + o->size; g < e && !landed; g += 4096) {
+            u64 key = draw_page_key(g), lo = g > o->addr ? g : o->addr, hi = g + 4096 < e ? g + 4096 : e;
+            u32 at = draw_page_index(p, unique, key);
+            if (at < unique && p[at].key == key && !out_copyable(o, lo, hi)) {
+                land_reason(WB_DRAW);
+                landed = 1;
+            }
+        }
     for (i = 0; i < unique; i++) {
         const u8* page = p[i].key & (1ull << 63) ? NULL : gmem_ptr_untracked(p[i].gva, 4096);
         if (page)
@@ -772,10 +902,13 @@ static void atlas_fill(const DrawPage* p, size_t unique, u8* ptr, VkBuffer atlas
         for (u64 g = o->addr & ~4095ull, e = o->addr + o->size; g < e; g += 4096) {
             u64 key = draw_page_key(g), lo = g > o->addr ? g : o->addr, hi = g + 4096 < e ? g + 4096 : e;
             u32 at = draw_page_index(p, unique, key);
-            if (at < unique && p[at].key == key)
+            if (at < unique && p[at].key == key) {
                 copy_add(&c, o->buf, o->off + (lo - o->addr), atlas_off + at * 4096ull + (lo - g), hi - lo);
+                composed = 1;
+            }
         }
     copy_end(&c);
+    return composed;
 }
 
 /* All bindings of an aliasing draw index one page atlas. This also covers fragmented GPU mappings: the shader's
@@ -795,6 +928,7 @@ int vk_buf_draw_prepare(VkDrawStorage* draw) {
     u64 atlas_off = 0, atlas_size = unique * 4096ull;
     VmaAllocation mem = VK_NULL_HANDLE;
     u8* ptr = NULL;
+    int composed = 0;
     if (alias) {
         if (atlas_size > g_vk.props.limits.maxStorageBufferRange) {
             WARN_LIMIT(1, "vulkan: aliased draw needs %llu storage bytes, beyond the device's descriptor range\n",
@@ -809,7 +943,7 @@ int vk_buf_draw_prepare(VkDrawStorage* draw) {
             free(p);
             return 0;
         }
-        atlas_fill(p, unique, ptr, atlas, atlas_off);
+        composed = atlas_fill(p, unique, ptr, atlas, atlas_off);
         copy_note(1, atlas_size);
     }
     for (int s = 0; s < 2; s++) {
@@ -847,7 +981,7 @@ int vk_buf_draw_prepare(VkDrawStorage* draw) {
     }
     if (alias)
         for (size_t i = 0; i < unique; i++)
-            if (!draw_output_page(&p[i], ptr + i * 4096, atlas, atlas_off + i * 4096, mem)) {
+            if (!draw_output_page(&p[i], ptr + i * 4096, atlas, atlas_off + i * 4096, mem, composed)) {
                 vk_buf_writable_abort();
                 free(p);
                 return 0;
