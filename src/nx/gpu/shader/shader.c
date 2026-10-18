@@ -66,7 +66,7 @@ u64 shader_hash(const u8* code, u32 max_bytes, u32* out_len) {
         if (unresolved_brx && op->id == O_EXIT && flow_always(w[i]) && i >= maxt && i >= last_code) break;
         if (!unresolved_brx && has_cal && op->id == O_RET && flow_always(w[i]) && i >= maxt) break;
         if (!unresolved_brx && op->id == O_BRA && flow_always(w[i]) && i >= maxt && bra_target(w[i], i) <= i) break;
-        if (i > 16384) break;
+        if (i > 65535) break; /* mel-dlc fork: the leader bitset's reach (compute programs up to 256 KiB) */
     }
     u32 len = (last + 1) * 8;
     if (len > max_bytes) len = max_bytes;

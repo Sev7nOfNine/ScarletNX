@@ -22,6 +22,9 @@
 #include "nx/gpu/renderer.h"
 #include "nx/gpu/vk/backing.h"
 #include "nx/gpu/vk/pending_pages.h"
+/* mel-dlc fork: the most compute code read. NVN declares a program's size 0x100 bytes before it; some games (Marvel
+   Ultimate Alliance 3) have compute programs past 64 KiB, whose calls and branches land past a 0x10000 window. */
+#define CS_CODE_MAX 0x40000
 
 typedef struct CsPipe {
     u64 key;
@@ -489,7 +492,7 @@ typedef struct {
 static CsPipe* cs_pipe(const u8* code, u32 lx, u32 ly, u32 lz, u32 shm, CsKey k) {
     static CsPipe allocation_failed = {.failed = 1};
     u32 blen;
-    u64 key = vk_shader_hash(code, 0x10000 + 80, &blen, cs_cb_read) ^ ((u64)lx << 40) ^ ((u64)ly << 48) ^
+    u64 key = vk_shader_hash(code, CS_CODE_MAX + 80, &blen, cs_cb_read) ^ ((u64)lx << 40) ^ ((u64)ly << 48) ^
               ((u64)lz << 56) ^ ((u64)shm << 20) ^ ((u64)k.image << 32) ^ (u64)k.tex_int * 0x9E3779B97F4A7C15ull ^
               (u64)k.tex_sint * 0xC2B2AE3D27D4EB4Full;
     CsPipe* p = g_csp[key & 255];
@@ -508,9 +511,16 @@ static CsPipe* cs_pipe(const u8* code, u32 lx, u32 ly, u32 lz, u32 shm, CsKey k)
     p->si.tex_int_mask = k.tex_int;
     p->si.tex_sint_mask = k.tex_sint;
     const char* corpus = vk_corpus_dir();
-    if (corpus) shader_corpus_save(corpus, code, blen, 0x10000 + 80, ST_CS, &p->si, key);
+    if (corpus) shader_corpus_save(corpus, code, blen, CS_CODE_MAX + 80, ST_CS, &p->si, key);
     size_t nw = 0;
-    u32* spv = vk_translate_spirv(code, 0x10000 + 80, ST_CS, &p->si, &nw, cs_cb_read, &p->cbr);
+    u32* spv = vk_translate_spirv(code, CS_CODE_MAX + 80, ST_CS, &p->si, &nw, cs_cb_read, &p->cbr);
+    if (spv && nw > (4u << 20) / 4) { /* mel-dlc fork: calls inlined into a huge module stall the driver's compiler */
+        LOG("vulkan: compute %016llx not translated: %zu KB of SPIR-V is past the 4 MB a driver compiles in time\n",
+            (unsigned long long)key, nw * 4 / 1024);
+        free(spv);
+        p->failed = 1;
+        return p;
+    }
     if (!spv || p->si.unsupported) {
         p->failed = 1;
         LOG("vulkan: compute %016llx not translated: %s\n", (unsigned long long)key,
@@ -620,13 +630,45 @@ static void cs_read_code(u64 pa, u8* dst) {
             u32 magic, declared;
             memcpy(&magic, header, sizeof magic);
             memcpy(&declared, header + 4, sizeof declared);
-            if (magic == 0x12345679 && declared >= 0x80 && declared <= 0x10000 && !(declared & 7) &&
+            if (magic == 0x12345679 && declared >= 0x80 && declared <= CS_CODE_MAX && !(declared & 7) &&
                 gmem_ptr_untracked(pa, declared))
                 code_size = declared;
         }
     }
-    memset(dst, 0, 0x10000 + 80);
+    memset(dst, 0, CS_CODE_MAX + 80);
     gmem_read_code(pa, dst + 80, code_size);
+    /* mel-dlc fork: a program can call or branch to code past the size it declares (subroutines placed after it,
+       as in Marvel Ultimate Alliance 3). The window grows to cover every relative branch and call target, and to
+       the code those reach, up to CS_CODE_MAX. */
+    for (int pass = 0; pass < 8; pass++) {
+        const u64* w = (const u64*)dst;
+        /* only the program itself: up to an EXIT past its branch targets. A window with no declared size holds
+           unrelated bytes after that, which must not be read as branches. */
+        u32 len = 0;
+        vk_shader_hash(dst, code_size + 80, &len, cs_cb_read);
+        u32 n = len / 8, need = code_size;
+        if (n > 10 + code_size / 8) n = 10 + code_size / 8;
+        if (len < code_size + 80) break; /* it ends inside the window */
+        for (u32 i = 11; i < n; i++) {
+            if ((i - 10) % 4 == 0) continue;
+            u32 op = (u32)(w[i] >> 52);
+            if (op != 0xE24 && op != 0xE26 && op != 0xE27 && op != 0xE29 && op != 0xE2A && op != 0xE2B &&
+                op != 0xE23) /* BRA CAL PRET SSY PBK PCNT PEXIT */
+                continue;
+            i32 off = (i32)((u32)(w[i] >> 20) << 8) >> 8;
+            i64 t = (i64)i + 1 + off / 8;
+            if (t >= 10 && (t - 10) % 4 == 0) t++;
+            if (t <= 10) continue;
+            u64 end = ((u64)(t - 10) + 64) * 8; /* the target and a little code after it */
+            end = (end + 0xFF) & ~0xFFull;
+            if (end > need) need = end > CS_CODE_MAX ? CS_CODE_MAX : (u32)end;
+        }
+        if (need <= code_size) break;
+        LOG_LIMIT(8, "vulkan: compute at %llx branches past its %#x bytes: reading %#x\n", (unsigned long long)pa,
+                  code_size, need);
+        gmem_read_code(pa + code_size, dst + 80 + code_size, need - code_size);
+        code_size = need;
+    }
 }
 
 void vk_dispatch(GpuChannel* ch, const u32* q, u64 code) {
@@ -676,7 +718,7 @@ void vk_dispatch(GpuChannel* ch, const u32* q, u64 code) {
     CsPipe* p = fe->p;
     if (!p || fe->addr != pa || fe->epoch != g_vk_epoch || fe->lx != lx || fe->ly != ly || fe->lz != lz ||
         fe->shm != shm || !vk_cb_reads_hold(&p->cbr, cs_cb_read)) {
-        static u8 code_buf[0x10000 + 80]; /* compute programs have no header: 80 zero bytes stand in for one */
+        static u8 code_buf[CS_CODE_MAX + 80]; /* compute programs have no header: 80 zero bytes stand in for one */
         CsKey unkeyed = {0, 0, 0};
         cs_read_code(pa, code_buf);
         p = cs_pipe(code_buf, lx, ly, lz, shm, unkeyed);
@@ -712,7 +754,7 @@ void vk_dispatch(GpuChannel* ch, const u32* q, u64 code) {
     if (ck.tex_int || ck.image) {
         if (!p->keyed || (p->keyed->si.rt_int_mask >> 8) != ck.image || p->keyed->si.tex_int_mask != ck.tex_int ||
             p->keyed->si.tex_sint_mask != ck.tex_sint) {
-            static u8 keyed_code[0x10000 + 80];
+            static u8 keyed_code[CS_CODE_MAX + 80];
             cs_read_code(pa, keyed_code);
             p->keyed = cs_pipe(keyed_code, lx, ly, lz, shm, ck);
         }

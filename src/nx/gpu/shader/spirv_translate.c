@@ -1300,7 +1300,8 @@ static int supported(u64 w, int op) {
             if (B(w, 8, 8) != 255 || !(B(w, 0, 8) + count <= 255 || (B(w, 0, 8) == 255 && count == 1))) return 0;
             if (B(w, 31, 1)) return addr + count * 4 <= 0x200;
             return ((addr == 0x64 || addr == 0x6c) && count == 1) || (addr >= 0x70 && addr + count * 4 <= 0x80) ||
-                   (addr >= 0x80 && addr + count * 4 <= 0x280) || (addr >= 0x2c0 && addr + count * 4 <= 0x2e0);
+                   (addr >= 0x80 && addr + count * 4 <= 0x280) || (addr >= 0x2c0 && addr + count * 4 <= 0x2e0) ||
+                   (addr == 0x3a0 && count == 1); /* mel-dlc fork: the viewport mask, dropped (one viewport) */
         }
         /* OUT emits and ends geometry primitives on the stream its third operand names */
         case O_OUT_R:
@@ -2146,6 +2147,7 @@ u32* shader_to_spirv(const u8* code, u32 max_bytes, int stage, ShaderInfo* si, s
                 else if (location >= 0x2c0 && location < 0x2e0) {
                     u32 bit = 1u << ((location - 0x2c0) / 4);
                     if (si->clip_enable & bit) clip_used |= bit;
+                } else if (location == 0x3a0) { /* mel-dlc fork: the viewport mask, dropped */
                 } else if (location >= 0x80)
                     outputs_used[(location - 0x80) >> 4] = 1;
                 else
@@ -3796,6 +3798,7 @@ u32* shader_to_spirv(const u8* code, u32 max_bytes, int stage, ShaderInfo* si, s
                                        spv_emit_bitcast(&c->emit, i32_type, reg_read(c, d + k)));
                     continue;
                 }
+                if (location == 0x3a0) continue; /* mel-dlc fork: the viewport mask; one viewport takes everything */
                 if (location >= 0x2c0) {
                     u32 index = (location - 0x2c0) / 4;
                     if (clip_used & (1u << index)) {
