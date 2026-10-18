@@ -97,6 +97,10 @@ void fs_init(void) {
     static const char* const shared_paths[] = {"romfs", "exefs", "romfs.bin"};
     unsigned shared = 0, failed = 0;
     pm_lock(&fsp.tree.lock);
+    /* the console empties the application's temporary storage when the application is launched, and a game finds it
+       empty at first use */
+    r = fs_tree_remove(&fsp.tree, NULL, "save/temp", 1, 1, 0);
+    if (r != FS_TREE_OK && r != FS_TREE_NOTFOUND) WARN("fs: could not empty save/temp (error %d)\n", r);
     for (size_t i = 0; i < sizeof shared_paths / sizeof shared_paths[0]; i++) {
         FsNode* node;
         if (fs_tree_lookup(&fsp.tree, NULL, shared_paths[i], &node)) continue;

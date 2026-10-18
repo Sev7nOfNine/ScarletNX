@@ -34,6 +34,7 @@ static const Fixture files[] = {{"data/drive/seed.bin", "initial", 7},
                                 {"service-data/romfs/mu/\xce\xbc.bin", "mu", 2},
 #endif
                                 {"service-data/root/root.txt", "root", 4},
+                                {"service-data/save/temp/last-launch.bin", "left", 4},
                                 {"raw-data/romfs.bin", "RAW\0ROMFS\xff bytes", 16}};
 
 static int fixtures(const char* scratch) {

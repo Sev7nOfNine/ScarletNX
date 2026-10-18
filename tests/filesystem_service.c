@@ -1015,6 +1015,10 @@ int main(int argc, char** argv) {
     strcpy(g_datadir, raw ? "raw-data/" : "service-data/");
     fs_init();
     CHECK(test_scans > 0);
+    /* the temporary storage the fixture left is gone, from the index and the disk: each launch starts it empty */
+    FILE* left = fopen("service-data/save/temp/last-launch.bin", "rb");
+    CHECK(raw || (!left && !tree_has("save/temp")));
+    if (left) fclose(left);
     test_scans_allowed = 0;
     svc_fs_init();
     romfs_init();
