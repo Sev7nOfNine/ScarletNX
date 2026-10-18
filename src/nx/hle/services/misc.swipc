@@ -299,19 +299,19 @@ interface nn::bcat::detail::ipc::INotifierService {
 interface nn::bcat::detail::ipc::IDeliveryTaskSuspensionService {
 }
 
-# ================================================================ aoc:u: no add-on content
+# ================================================================ aoc:u: the add-on content in system/archives
 type nn::ec::srv::detail::PurchasedProductInfo = bytes<0x80, 8>;
 
 interface nn::aocsrv::detail::IAddOnContentManager is aoc:u {
-    @stub [0] CountAddOnContentByApplicationId(nn::ncm::ApplicationId application_id) -> i32 count;
-    @stub [1] ListAddOnContentByApplicationId(i32 offset, i32 count, nn::ncm::ApplicationId application_id,
+    [0] CountAddOnContentByApplicationId(nn::ncm::ApplicationId application_id) -> i32 count;
+    [1] ListAddOnContentByApplicationId(i32 offset, i32 count, nn::ncm::ApplicationId application_id,
                                               array<i32, 6> indices) -> i32 out_count;
-    @stub [2] CountAddOnContent(pid) -> i32 count;
-    @stub [3] ListAddOnContent(i32 offset, i32 count, pid, array<i32, 6> indices) -> i32 out_count;
+    [2] CountAddOnContent(pid) -> i32 count;
+    [3] ListAddOnContent(i32 offset, i32 count, pid, array<i32, 6> indices) -> i32 out_count;
     [4] GetAddOnContentBaseIdByApplicationId(nn::ncm::ApplicationId application_id) -> u64 base_id;
     [5] GetAddOnContentBaseId(pid) -> u64 base_id;
-    @stub [6] PrepareAddOnContentByApplicationId(i32 index, nn::ncm::ApplicationId application_id);
-    @stub [7] PrepareAddOnContent(i32 index, pid);
+    [6] PrepareAddOnContentByApplicationId(i32 index, nn::ncm::ApplicationId application_id);
+    [7] PrepareAddOnContent(i32 index, pid);
     [8] GetAddOnContentListChangedEvent() -> handle<copy, event> event;
     # 9 and 11 to 50: answered with nothing (as Eden does), declared as the SDK's client sends them
     @stub [9] GetAddOnContentLostErrorCode(array<i32, 5> indices, pid) -> bytes<8, 4> error_code;

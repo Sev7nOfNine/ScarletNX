@@ -12,7 +12,9 @@
 /* The smaller services: apm, lm, pctl, friend, ns, prepo, caps, ectx, psm, fatal, csrng, spl, mm, nfp, nfc, bcat,
    aoc, irs, mii, ldn, btm and audin, each as a console offline, with no NFC device, microphone or add-on content */
 #include "nx/hle/services/services_int.h"
+#include "nx/hle/filesystem/fs.h"
 #include <openssl/rand.h>
+#include <stdio.h>
 
 #include "hle/services/misc.swipc.inc"
 
@@ -685,12 +687,85 @@ static int nn_bcat_detail_ipc_INotifierService_GetEvent(SvcObj* self, u32* event
     return new_event(event, "bcat storage update", 0);
 }
 
-/* ============================================================ aoc:u: no add-on content */
+/* ============================================================ aoc:u: the add-on content in system/archives */
 #define AOC_NO_PURCHASED_PRODUCT RC(164, 400) /* nim's shop: NoPurchasedProductInfoAvailable */
 #define AOC_NOT_CONNECTED        RC(110, 300) /* nifm's: the token needs the network */
 
 /* the add-on contents' ids start past the application's: its base id with 0x1000 added */
 static u64 aoc_base_id(u64 application_id) { return (application_id & 0xFFFFFFFFFFFFE000ull) + 0x1000; }
+
+/* An add-on content is installed when its RomFS image is in the data folder as system/archives/<data id>.romfs,
+   the file OpenDataStorageByDataId opens: data id = base id + index, index 1 to 2047. Scanned once, the list
+   never changes while the game runs. */
+#define AOC_MAX 2047
+static PMutex aoc_lock = PMUTEX_INIT;
+static int aoc_scanned, aoc_count;
+static i32 aoc_index[AOC_MAX];
+static void aoc_scan(void) {
+    pm_lock(&aoc_lock);
+    if (!aoc_scanned) {
+        u64 base = aoc_base_id(g_title_id);
+        for (i32 i = 1; i <= AOC_MAX; i++) {
+            char p[64];
+            snprintf(p, sizeof p, "system/archives/%016llx.romfs", (unsigned long long)(base + (u64)i));
+            FILE* f = fs_open_read(p, NULL);
+            if (!f) continue;
+            fclose(f);
+            aoc_index[aoc_count++] = i;
+            LOG("aoc: add-on content %d (%016llx) installed\n", i, (unsigned long long)(base + (u64)i));
+        }
+        aoc_scanned = 1;
+    }
+    pm_unlock(&aoc_lock);
+}
+static i32 aoc_count_for(u64 application_id) {
+    if (aoc_base_id(application_id) != aoc_base_id(g_title_id)) return 0;
+    aoc_scan();
+    return aoc_count;
+}
+static i32 aoc_list(i32 offset, i32 count, u64 application_id, IpcBuf indices) {
+    i32 n = 0, total = aoc_count_for(application_id);
+    if (offset < 0 || count <= 0 || !indices.addr) return 0;
+    if ((u64)count > indices.size / 4) count = (i32)(indices.size / 4);
+    for (i32 i = offset; i < total && n < count; i++) gw32(indices.addr + 4 * (u64)n++, (u32)aoc_index[i]);
+    return n;
+}
+static int nn_aocsrv_detail_IAddOnContentManager_CountAddOnContentByApplicationId(SvcObj* self,
+                                                                                  nn_ncm_ApplicationId application_id,
+                                                                                  i32* count) {
+    (void)self;
+    *count = aoc_count_for(application_id);
+    return 0;
+}
+static int nn_aocsrv_detail_IAddOnContentManager_ListAddOnContentByApplicationId(SvcObj* self, i32 offset, i32 count,
+                                                                                 nn_ncm_ApplicationId application_id,
+                                                                                 IpcBuf indices, i32* out_count) {
+    (void)self;
+    *out_count = aoc_list(offset, count, application_id, indices);
+    return 0;
+}
+static int nn_aocsrv_detail_IAddOnContentManager_CountAddOnContent(SvcObj* self, u64 pid, i32* count) {
+    (void)self, (void)pid;
+    *count = aoc_count_for(g_title_id);
+    return 0;
+}
+static int nn_aocsrv_detail_IAddOnContentManager_ListAddOnContent(SvcObj* self, i32 offset, i32 count, u64 pid,
+                                                                  IpcBuf indices, i32* out_count) {
+    (void)self, (void)pid;
+    *out_count = aoc_list(offset, count, g_title_id, indices);
+    return 0;
+}
+/* the image is already in place: nothing to download or mount */
+static int
+nn_aocsrv_detail_IAddOnContentManager_PrepareAddOnContentByApplicationId(SvcObj* self, i32 index,
+                                                                         nn_ncm_ApplicationId application_id) {
+    (void)self, (void)index, (void)application_id;
+    return 0;
+}
+static int nn_aocsrv_detail_IAddOnContentManager_PrepareAddOnContent(SvcObj* self, i32 index, u64 pid) {
+    (void)self, (void)index, (void)pid;
+    return 0;
+}
 static int nn_aocsrv_detail_IAddOnContentManager_GetAddOnContentBaseIdByApplicationId(
     SvcObj* self, nn_ncm_ApplicationId application_id, u64* base_id) {
     (void)self;
