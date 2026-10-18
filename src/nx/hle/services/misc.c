@@ -694,6 +694,16 @@ static int nn_bcat_detail_ipc_INotifierService_GetEvent(SvcObj* self, u32* event
 
 /* the add-on contents' ids start past the application's: its base id with 0x1000 added */
 static u64 aoc_base_id(u64 application_id) { return (application_id & 0xFFFFFFFFFFFFE000ull) + 0x1000; }
+/* am's ApplicationRecordNotFound, for a list asked from past its end */
+#define SNX_AOC_NO_RECORD RC(128, 37)
+/* the list is empty: from its end, offset 0, nothing; from past it, no record */
+static int nn_aocsrv_detail_IAddOnContentManager_ListAddOnContent(SvcObj* self, i32 offset, i32 count, u64 pid,
+                                                                  IpcBuf indices, i32* out_count) {
+    (void)self, (void)count, (void)pid, (void)indices;
+    if (offset != 0) return SNX_AOC_NO_RECORD;
+    *out_count = 0;
+    return 0;
+}
 static int nn_aocsrv_detail_IAddOnContentManager_GetAddOnContentBaseIdByApplicationId(
     SvcObj* self, nn_ncm_ApplicationId application_id, u64* base_id) {
     (void)self;

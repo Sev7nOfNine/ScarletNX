@@ -309,7 +309,7 @@ interface nn::aocsrv::detail::IAddOnContentManager is aoc:u {
     @stub [1] ListAddOnContentByApplicationId(i32 offset, i32 count, nn::ncm::ApplicationId application_id,
                                               array<i32, 6> indices) -> i32 out_count;
     @stub [2] CountAddOnContent(pid) -> i32 count;
-    @stub [3] ListAddOnContent(i32 offset, i32 count, pid, array<i32, 6> indices) -> i32 out_count;
+    [3] ListAddOnContent(i32 offset, i32 count, pid, array<i32, 6> indices) -> i32 out_count;
     [4] GetAddOnContentBaseIdByApplicationId(nn::ncm::ApplicationId application_id) -> u64 base_id;
     [5] GetAddOnContentBaseId(pid) -> u64 base_id;
     @stub [6] PrepareAddOnContentByApplicationId(i32 index, nn::ncm::ApplicationId application_id);

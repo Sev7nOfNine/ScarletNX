@@ -698,6 +698,28 @@ static void test_nfp_filter(void) {
     svcobj_unref(manager);
 }
 
+/* aoc:u's ListAddOnContent (3) {offset, count, pid} with no add-on content: from the end (0) nothing, from past it
+   (1, or a negative offset, which the console reads unsigned) am's ApplicationRecordNotFound */
+static void test_aoc_list(void) {
+    static const u32 offsets[] = {0, 1, 0xFFFFFFFFu};
+    SvcObj* aoc = new_aoc();
+    Request r;
+    for (u32 i = 0; i < 3; i++) {
+        request(&r, 3);
+        argument32(&r, 0, offsets[i]);
+        argument32(&r, 4, 16);
+        r.c.has_pid = 1;
+        r.c.nb = 1;
+        if (i) {
+            CHECK(aoc->dispatch(aoc, &r.c) == RC(128, 37));
+            continue;
+        }
+        call(aoc, &r);
+        CHECK(r.c.out_size == 4 && reply32(&r, 0) == 0);
+    }
+    svcobj_unref(aoc);
+}
+
 int main(void) {
     g_mem = calloc(1, 0x10000);
     CHECK(g_mem != NULL);
@@ -707,6 +729,7 @@ int main(void) {
     test_acc_select();
     test_ldn_monitor();
     test_nfp_filter();
+    test_aoc_list();
     CHECK(test_objects == 0 && test_kobjs == 0);
     free(g_mem);
     printf("misc_service: %u checks passed\n", test_checks);
