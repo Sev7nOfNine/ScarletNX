@@ -130,11 +130,13 @@ static void splash_drawn(App* app, const SDL_Rect* view, const SnxSplashSvg* svg
     free(drawing);
     SDL_DestroySurface(image);
 }
-/* text in color anywhere on the render, glyph by glyph in the font's own bytes: its ink pixels in color, the others
-   not (a box's frame may cross the font's last row, which is empty); 1 and where it starts, else 0 */
-static int find_text(App* app, const char* text, SDL_Color color, int size, int* at_x, int* at_y) {
+/* the 16 rows of the menu font's glyph c: CP437's, then the Latin letters past it (gui_menu_glyph) */
+static const uint8_t* font_rows(int c) { return c < 256 ? gui_vga_font + c * 16 : gui_latin_font + (c - 256) * 16; }
+/* n glyphs in color anywhere on the render: their ink pixels in color, the others not (a box's frame may cross the
+   font's last row, which is empty); 1 and where they start, else 0 */
+static int find_glyphs(App* app, const int* text, int n, SDL_Color color, int size, int* at_x, int* at_y) {
     SDL_Surface *read = SDL_RenderReadPixels(app->renderer, NULL), *image;
-    int s = app->scale * size, n = (int)strlen(text), first = -1, fx = 0, fy = 0, found = 0, x, y;
+    int s = app->scale * size, first = -1, fx = 0, fy = 0, found = 0, x, y;
     assert(read);
     image = SDL_ConvertSurface(read, SDL_PIXELFORMAT_RGBA32);
     SDL_DestroySurface(read);
@@ -144,7 +146,7 @@ static int find_text(App* app, const char* text, SDL_Color color, int size, int*
     for (int i = 0; i < n && first < 0; ++i) /* the first ink, to look for */
         for (int gy = 0; gy < 15 && first < 0; ++gy)
             for (int gx = 0; gx < 8 && first < 0; ++gx)
-                if (gui_vga_font[(unsigned char)text[i] * 16 + gy] & (0x80 >> gx)) {
+                if (font_rows(text[i])[gy] & (0x80 >> gx)) {
                     first = i;
                     fx = (i * 8 + gx) * s;
                     fy = gy * s;
@@ -157,7 +159,7 @@ static int find_text(App* app, const char* text, SDL_Color color, int size, int*
             for (int i = 0; found && i < n; ++i)
                 for (int gy = 0; found && gy < 15; ++gy)
                     for (int gx = 0; found && gx < 8; ++gx) {
-                        int ink = (gui_vga_font[(unsigned char)text[i] * 16 + gy] & (0x80 >> gx)) != 0;
+                        int ink = (font_rows(text[i])[gy] & (0x80 >> gx)) != 0;
                         found = ink == SNX_IS(SNX_AT(x + (i * 8 + gx) * s, y + gy * s));
                     }
             if (found) {
@@ -169,6 +171,25 @@ static int find_text(App* app, const char* text, SDL_Color color, int size, int*
 #undef SNX_AT
     SDL_DestroySurface(image);
     return found;
+}
+/* text in color, glyph by glyph in the font's own bytes (CP437) */
+static int find_text(App* app, const char* text, SDL_Color color, int size, int* at_x, int* at_y) {
+    int glyphs[256], n = 0;
+    while (text[n]) {
+        assert(n < 256);
+        glyphs[n] = (unsigned char)text[n];
+        ++n;
+    }
+    return find_glyphs(app, glyphs, n, color, size, at_x, at_y);
+}
+/* UTF-8 text in color, a glyph each letter as the menu draws it (gui_menu_glyph), size times the text's letters */
+static int find_letters(App* app, const char* text, SDL_Color color, int size, int* at_x, int* at_y) {
+    int glyphs[256], n = 0;
+    while (*text) {
+        assert(n < 256);
+        glyphs[n++] = gui_menu_glyph(SDL_StepUTF8(&text, NULL));
+    }
+    return find_glyphs(app, glyphs, n, color, size, at_x, at_y);
 }
 /* the text drawn, or not, in color, its letters size times the text's: a check that fails names its line */
 #define shows(app, text, color)           shows_at(__LINE__, app, text, color, 1, 1)
@@ -1598,6 +1619,24 @@ int main(int argc, char** argv) {
         open_app(&app, GUI_APP_LANGUAGE);
         key(&app, SDLK_RIGHT);
         assert(!app.language && snx_tr_language() == 0);
+    }
+    /* the Latin letters past CP437 drawn from Unifont's glyphs (latin.h), the a and the o with a tilde beside CP437's
+       c with a cedilla, by each way the menu draws a line: at a cell, in a box, and in the title's bigger letters */
+    {
+        static const char words[] = "n\303\243o a\303\247\303\265es";
+        SDL_Color white = {255, 255, 255, 255};
+        int x, y, w = cell_w(&app), h = cell_h(&app);
+        SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
+        SDL_RenderClear(app.renderer);
+        text(&app, 2, 1, words, white);
+        assert(find_letters(&app, words, white, 1, &x, &y) && x == 2 * w && y == h);
+        assert(!find_text(&app, "n?o a\207?es", white, 1, &x, &y)); /* not CP437's question marks */
+        SDL_RenderClear(app.renderer);
+        text_in(&app, gui_rect(0, 0, 40 * w, 4 * h), 3 * w, 2 * h, words, white);
+        assert(find_letters(&app, words, white, 1, &x, &y) && x == 3 * w && y == 2 * h);
+        SDL_RenderClear(app.renderer);
+        big_text(&app, gui_rect(0, 0, 60 * w, 6 * h), w, h, words, 2, white);
+        assert(find_letters(&app, words, white, 2, &x, &y) && x == w && y == h);
     }
     /* Clean old settings, Enter twice: the first says what it would do, another key in between starts again, the
        second does it and shows what it did over the screen, until a key closes it; then there is nothing left */

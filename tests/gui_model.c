@@ -2,6 +2,7 @@
    Copyright 2026 the ScarletNX contributors */
 #include "gui/model.h"
 #include "gui/browser.h"
+#include "gui/latin.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,6 +191,23 @@ int main(void) {
     assert(gui_glyph(0x2191) == 0x18 && gui_glyph(0x2193) == 0x19 && gui_glyph(0x2192) == 0x1a);
     assert(gui_glyph(0x2190) == 0x1b && gui_glyph(0x263a) == 0x01 && gui_glyph(0x25bc) == 0x1f);
     assert(gui_glyph(0x2302) == 0x7f && gui_glyph(0x00a7) == 0x15 && gui_glyph(0x10) == 0x10);
+    /* the menu's letters: CP437's as they are, the Latin ones past it from Unifont, the rest '?' */
+    assert(gui_menu_glyph('a') == 'a' && gui_menu_glyph(0xe9) == 0x82 && gui_menu_glyph(0xa0) == 0xff);
+    assert(gui_menu_glyph(0xe7) == 0x87 && gui_menu_glyph(0x2302) == 0x7f);
+    {
+        static const uint32_t latin[] = {0xa4, 0xc3, 0xe3, 0xf5, 0xd5, 0x152, 0x219, 0x24f};
+        size_t i;
+        for (i = 0; i < sizeof latin / sizeof *latin; ++i) {
+            int c = gui_menu_glyph(latin[i]);
+            assert(c >= 256 && c < 256 + gui_latin_count && gui_latin_points[c - 256] == latin[i]);
+        }
+        for (i = 1; i < (size_t)gui_latin_count; ++i) assert(gui_latin_points[i - 1] < gui_latin_points[i]);
+        assert(gui_latin_count > 300 && gui_latin_points[0] >= 0xa0 && gui_latin_points[gui_latin_count - 1] <= 0x24f);
+        for (i = 0; i < (size_t)gui_latin_count; ++i) assert(gui_glyph(gui_latin_points[i]) == '?'); /* CP437's own */
+    }
+    assert(gui_menu_glyph('?') == '?' && gui_menu_glyph(0x9f) == '?' && gui_menu_glyph(0xad) == '?');
+    assert(gui_menu_glyph(0x250) == '?' && gui_menu_glyph(0x2026) == '?' && gui_menu_glyph(0x4e00) == '?');
+    assert(gui_menu_glyph(0x1f600) == '?');
     for (int i = 0; i < 1000000; ++i) gui_console_feed(&screen, "z", 1);
     assert(screen.row < screen.rows && screen.col <= screen.cols);
     gui_console_resize(&screen, 3, 1);

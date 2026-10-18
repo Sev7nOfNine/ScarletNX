@@ -14,8 +14,9 @@
 `scarletnx` started with no arguments (or a model's name, or the AppImage), with no game of its
 name beside it, opens its launcher: a small SDL3 menu for the command-line drivers. A copy named
 after a game, without its code, says so and never opens it. It uses an
-embedded public-domain 8x16 VGA BIOS font and nearest-neighbor integer scaling, and its words are English or a
-language compiled into it ([Languages](#languages)). No font files or localization packages are needed.
+embedded public-domain 8x16 VGA BIOS font, with GNU Unifont's 8x16 glyphs fitted to it for the Latin letters its CP437
+lacks, and nearest-neighbor integer scaling; its words are English or a language compiled into it
+([Languages](#languages)). No font files or localization packages are needed.
 
 ```sh
 ./build/scarletnx
@@ -490,6 +491,10 @@ brings a translation up to the code; a phrase it leaves empty, or marks `fuzzy`,
 - changes the keys of a foot's sentences (`#, snx-keys`, "Key: what it does."): each key stays as it is, or as the
   same file translates it (`#, snx-key`, as `Back`), since a click on the foot finds a key by its word, and a sentence
   greyed (`~`, one its screen cannot do now) stays greyed;
+- has a letter the menu's font does not draw, which would show as `?`: the font is CP437 and the Latin letters of
+  U+00A0 to U+024F past it, GNU Unifont's (`src/gui/unifont-latin.hex`, which `scripts/build-glyphs.py --from` keeps
+  from a Unifont `.hex`, and the build draws with the VGA font's stems and baseline; the `gui_glyphs_kept` test checks
+  it holds each of them once);
 - has contexts (`msgctxt`), plurals (`msgid_plural`), a phrase twice, or is not UTF-8.
 
 The runtime's settings stay as the runtime names them (their groups, names, help and words come from
@@ -527,7 +532,8 @@ Key setup tests cover installation, replacement, invalid drops, failed writes,
 self-copy safety, cancellation, and the bright-red overwrite warning.
 Language tests cover a catalog's search in either byte order, catalogs cut or pointing out of themselves, the language
 Auto picks from the system's locales, English where a language has none, the Language row and `app.ini`'s key, and
-the script's refusals; they use a language of their own, `tests/po/xx.po`.
+the script's refusals; they use a language of their own, `tests/po/xx.po`. Glyph tests cover the Latin letters'
+lookup, each way the menu draws a line with them, and the script that keeps them.
 Settings tests cover the runtime's list read into rows, picks, the options each combination
 passes, and the screens of its groups and App; menu tests cover mouse hover versus explicit
 activation, the menu without the games and Games with Add a folder and the recent games' show-more row,

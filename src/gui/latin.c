@@ -1,0 +1,19 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+   Copyright 2026 the ScarletNX contributors */
+#include "gui/latin.h"
+#include "common/utilities/font.h"
+
+int gui_menu_glyph(uint32_t codepoint) {
+    int low = 0, high = gui_latin_count - 1;
+    unsigned char c = gui_glyph(codepoint);
+    if (c != '?' || codepoint == '?') return c;
+    while (low <= high) {
+        int middle = (low + high) / 2;
+        if (gui_latin_points[middle] == codepoint) return 256 + middle;
+        if (gui_latin_points[middle] < codepoint)
+            low = middle + 1;
+        else
+            high = middle - 1;
+    }
+    return '?';
+}

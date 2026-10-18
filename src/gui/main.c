@@ -11,6 +11,7 @@
 #include "common/utilities/font.h"
 #include "gui/gui.h"
 #include "gui/i18n.h"
+#include "gui/latin.h"
 #include "gui/model.h"
 #include "gui/place.h"
 #include "gui/gui_process.h"
@@ -307,16 +308,19 @@ static int keys_left(App* app) {
     }
     return (int)((shown - (now - app->keys_done) + 999) / 1000);
 }
-static void glyph(App* app, float x, float y, unsigned char c);
+static void glyph(App* app, float x, float y, int c);
+/* the font's glyphs 16 to a row: CP437's 256, then the Latin letters past it (gui_menu_glyph) */
 static SDL_Texture* create_font(SDL_Renderer* renderer) {
-    SDL_Surface* surface = SDL_CreateSurface(128, 256, SDL_PIXELFORMAT_RGBA32);
+    int glyphs = 256 + gui_latin_count;
+    SDL_Surface* surface = SDL_CreateSurface(128, (glyphs + 15) / 16 * 16, SDL_PIXELFORMAT_RGBA32);
     if (!surface) return NULL;
-    for (int glyph = 0; glyph < 256; ++glyph)
+    for (int glyph = 0; glyph < glyphs; ++glyph) {
+        const uint8_t* rows = glyph < 256 ? gui_vga_font + glyph * 16 : gui_latin_font + (glyph - 256) * 16;
         for (int y = 0; y < 16; ++y) {
             Uint32* line = (Uint32*)((char*)surface->pixels + ((glyph / 16) * 16 + y) * surface->pitch);
-            for (int x = 0; x < 8; ++x)
-                line[(glyph % 16) * 8 + x] = (gui_vga_font[glyph * 16 + y] & (0x80 >> x)) ? 0xffffffffu : 0;
+            for (int x = 0; x < 8; ++x) line[(glyph % 16) * 8 + x] = (rows[y] & (0x80 >> x)) ? 0xffffffffu : 0;
         }
+    }
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
     SDL_DestroySurface(surface);
     if (texture) {
@@ -325,8 +329,8 @@ static SDL_Texture* create_font(SDL_Renderer* renderer) {
     }
     return texture;
 }
-/* the font's glyph c, its corner at x, y in pixels */
-static void glyph(App* app, float x, float y, unsigned char c) {
+/* the font's glyph c (gui_menu_glyph's, or a CP437 byte), its corner at x, y in pixels */
+static void glyph(App* app, float x, float y, int c) {
     SDL_FRect source = {(float)(c % 16 * 8), (float)(c / 16 * 16), 8, 16};
     SDL_FRect destination = {x, y, 8.0f * (float)app->scale, 16.0f * (float)app->scale};
     SDL_RenderTexture(app->renderer, app->font, &source, &destination);
@@ -338,7 +342,7 @@ static float text_px(App* app, float x, float y, const char* value, size_t chars
     SDL_SetTextureColorMod(app->font, color.r, color.g, color.b);
     SDL_SetTextureAlphaMod(app->font, (Uint8)(alpha * 255));
     for (i = 0; *value && i < chars; ++i, x += w) {
-        unsigned char c = gui_glyph(SDL_StepUTF8(&value, NULL));
+        int c = gui_menu_glyph(SDL_StepUTF8(&value, NULL));
         if (x + w <= limit) glyph(app, x, y, c);
     }
     SDL_SetTextureAlphaMod(app->font, 255);
@@ -1158,7 +1162,8 @@ static void text_in(App* app, GuiRect r, int x, int y, const char* value, SDL_Co
     skip = gui_slide((int)SDL_utf8strlen(value) - room, now_ms(app), app->theme.scroll_ms);
     while (skip-- > 0 && *value) SDL_StepUTF8(&value, NULL);
     SDL_SetTextureColorMod(app->font, color.r, color.g, color.b);
-    for (; *value && room > 0; --room, x += w) glyph(app, (float)x, (float)y, gui_glyph(SDL_StepUTF8(&value, NULL)));
+    for (; *value && room > 0; --room, x += w)
+        glyph(app, (float)x, (float)y, gui_menu_glyph(SDL_StepUTF8(&value, NULL)));
 }
 /* a box framed in the dim colour, filled with the page's (fill) or the frame alone (line); with a head when label is
    not NULL, its label on a band of ink (fill) or over a rule (line). Where its text starts */
@@ -1654,7 +1659,7 @@ static void big_text(App* app, GuiRect r, int x, int y, const char* value, int s
     float w = 8.0f * (float)(app->scale * size), h = 16.0f * (float)(app->scale * size);
     SDL_SetTextureColorMod(app->font, color.r, color.g, color.b);
     for (; *value && (float)x + w <= (float)(r.x + r.w); x += (int)w) {
-        unsigned char c = gui_glyph(SDL_StepUTF8(&value, NULL));
+        int c = gui_menu_glyph(SDL_StepUTF8(&value, NULL));
         SDL_FRect source = {(float)(c % 16 * 8), (float)(c / 16 * 16), 8, 16}, at = {(float)x, (float)y, w, h};
         SDL_RenderTexture(app->renderer, app->font, &source, &at);
     }

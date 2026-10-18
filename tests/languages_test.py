@@ -36,6 +36,9 @@ PHRASES = {
 }
 
 
+DRAWN = bl.drawable(ROOT)
+
+
 class Po:
     """a .po written in a folder of its own"""
 
@@ -140,7 +143,7 @@ class Formats(unittest.TestCase):
 
 class Files(unittest.TestCase):
     def compile(self, body, **kw):
-        return bl.compile_po(Po(self, body, **kw).path, PHRASES)
+        return bl.compile_po(Po(self, body, **kw).path, PHRASES, DRAWN)
 
     def test_a_catalog_gettext_reads(self):
         code, name, mo, stale = self.compile(
@@ -202,6 +205,18 @@ class Files(unittest.TestCase):
         for body in bodies:
             with self.assertRaises(bl.Refused, msg=body):
                 self.compile(body)
+
+    def test_letters_the_font_draws(self):
+        # CP437's, and the Latin letters past it: the a and o with a tilde, the s with a comma
+        self.compile(entry('Settings', 'Configura\u00e7\u00f5es') + entry('Back', 'N\u00e3o') + entry('Up', '\u0219'))
+        for text in ('Ajustes\u2026', '\u201cAjustes\u201d', '\u8a2d\u5b9a', 'Ajustes \U0001f600'):
+            with self.assertRaises(bl.Refused, msg=text):
+                self.compile(entry('Settings', text))
+        with self.assertRaises(bl.Refused):  # the name Settings > App > Language shows
+            self.compile(entry('Settings', 'Ajustes'), name='\u65e5\u672c\u8a9e')
+        self.assertIn(0x00E3, DRAWN)
+        self.assertIn(0x00E9, DRAWN)
+        self.assertNotIn(0x2026, DRAWN)
 
     def test_refused_headers_and_names(self):
         with self.assertRaises(bl.Refused):

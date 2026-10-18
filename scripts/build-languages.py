@@ -6,11 +6,12 @@
 --pot writes po/scarletnx.pot from the phrases of src/gui (snx_tr, SNX_TR_NOOP, SNX_TR_KEYS, SNX_TR_KEY); --check
 fails when it is not what the code makes, or a po/*.po would not compile. --out FILE PO... makes FILE, the C source of
 every language's catalog (the .mo format, read by snx_mo_lookup). A .po is refused when a translation changes the
-printf conversions of its phrase (C's printf takes the arguments in order), changes a foot's keys, or is not a plain
-UTF-8 .po of single phrases.
+printf conversions of its phrase (C's printf takes the arguments in order), changes a foot's keys, has a letter the
+menu's font does not draw (scripts/build-glyphs.py), or is not a plain UTF-8 .po of single phrases.
 """
 
 import argparse
+import importlib.util
 import re
 import struct
 import sys
@@ -325,8 +326,25 @@ def check_entry(msgid, msgstr, keys, words, where):
                 raise Refused(f'{where}: {now!r} in {msgstr!r} is not the key {word!r} nor its translation here')
 
 
-def compile_po(path, phrases):
-    """a .po's code, name and catalog; the phrases the code no longer has, which it still translates"""
+def drawable(root):
+    """the code points past ASCII the menu's font draws: CP437's, and the Latin letters kept from GNU Unifont"""
+    spec = importlib.util.spec_from_file_location('build_glyphs', Path(__file__).with_name('build-glyphs.py'))
+    glyphs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(glyphs)
+    kept = root / glyphs.KEPT
+    return glyphs.codepage(root) | set(glyphs.read_hex(kept.read_text().splitlines(), kept))
+
+
+def check_drawn(text, drawn, where):
+    lacking = sorted({c for c in text if ord(c) > 127 and ord(c) not in drawn})
+    if lacking:
+        letters = ', '.join(f'U+{ord(c):04X}' for c in lacking)
+        raise Refused(f"{where}: {text!r} has what the menu's font does not draw ({letters}): it would show as ?")
+
+
+def compile_po(path, phrases, drawn):
+    """a .po's code, name and catalog; the phrases the code no longer has, which it still translates. drawn: the code
+    points past ASCII the menu's font has"""
     code = path.stem
     if not CODE.match(code) or code == 'en':
         raise Refused(f'{path}: a .po is named for its language, as pt_BR.po or de.po, and English is the code itself')
@@ -341,6 +359,7 @@ def compile_po(path, phrases):
     name = header.get('X-Language-Name', '')
     if not name:
         raise Refused(f'{path}: its header has no X-Language-Name, the language as itself calls it')
+    check_drawn(name, drawn, f'{path}: X-Language-Name')
     seen, catalog, stale = set(), {'': entries[0][1]}, []
     keys = {w for w, (flags, _) in phrases.items() if 'snx-key' in flags}
     words = {w: w for w in keys}  # a key not translated here stays itself
@@ -355,6 +374,7 @@ def compile_po(path, phrases):
         if not msgstr or 'fuzzy' in flags:
             continue  # not translated yet: English
         known = msgid in phrases
+        check_drawn(msgstr, drawn, where)
         check_entry(msgid, msgstr, known and 'snx-keys' in phrases[msgid][0], words, where)
         if not known:
             stale.append(msgid)
@@ -426,14 +446,15 @@ def main():
                 return 0
             if not pot.exists() or pot.read_bytes().decode().replace('\r\n', '\n') != text:
                 raise Refused(f'{POT} is not what the code says: run scripts/build-languages.py --pot')
-            phrases = pot_phrases(pot)
+            phrases, drawn = pot_phrases(pot), drawable(args.root)
             for po in sorted((args.root / 'po').glob('*.po')):
-                compile_po(po, phrases)
+                compile_po(po, phrases, drawn)
             return 0
         if not args.out:
             parser.error('--pot, --check or --out')
         phrases = pot_phrases(args.phrases or args.root / POT)
-        languages = sorted((compile_po(po, phrases) for po in args.po), key=lambda language: language[0])
+        drawn = drawable(args.root)
+        languages = sorted((compile_po(po, phrases, drawn) for po in args.po), key=lambda language: language[0])
         for code, _, _, stale in languages:
             if stale:
                 print(f'po/{code}.po: {len(stale)} translations of phrases the menu no longer has', file=sys.stderr)
