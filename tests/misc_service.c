@@ -1,15 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
    Copyright 2026 the ScarletNX contributors */
-/* mm:u (misc.c) and hid's IHidServer (hid.c) through their generated dispatchers, with the kernel objects they hand
-   out made here and the shared memory a host buffer */
+/* mm:u and the smaller services (misc.c), hid's IHidServer (hid.c) and acc (acc.c) through their generated
+   dispatchers, with the kernel objects they hand out made here and the shared memory a host buffer */
 #include "nx/hle/services/services_int.h"
 #include <math.h>
 #include <stdarg.h>
 
+#include "nx/hle/services/acc.c"
 #include "nx/hle/services/hid.c"
 #include "nx/hle/services/misc.c"
 
 u8* g_mem;
+u64 g_user_id[2] = {0x0123456789ABCDEFull, 0xFEDCBA9876543210ull};
 int g_verbose;
 int g_opt_docked, g_opt_lang = 1;
 u64 g_title_id = 0x0100BF00112C0000ull;
@@ -635,12 +637,26 @@ static void test_mii_default(void) {
     svcobj_unref(service);
 }
 
+/* acc's TrySelectUserWithoutInteraction: 51, and 52, which a game built for 19.0.0 sends instead, both pick the one
+   user {is_network_service_account_required} */
+static void test_acc_select(void) {
+    SvcObj* acc = new_acc();
+    Request r;
+    for (u32 cmd = 51; cmd <= 52; cmd++) {
+        request(&r, cmd);
+        call(acc, &r);
+        CHECK(r.c.out_size == 16 && !memcmp(r.c.out, g_user_id, 16));
+    }
+    svcobj_unref(acc);
+}
+
 int main(void) {
     g_mem = calloc(1, 0x10000);
     CHECK(g_mem != NULL);
     test_mm();
     test_hid();
     test_mii_default();
+    test_acc_select();
     CHECK(test_objects == 0 && test_kobjs == 0);
     free(g_mem);
     printf("misc_service: %u checks passed\n", test_checks);

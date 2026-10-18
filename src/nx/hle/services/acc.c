@@ -62,11 +62,16 @@ static int nn_account_IAccountServiceForApplication_GetProfile(SvcObj* self, con
     return 0;
 }
 /* with one user, that user, chosen without asking */
-static int nn_account_IAccountServiceForApplication_TrySelectUserWithoutInteraction(
+static int nn_account_IAccountServiceForApplication_TrySelectUserWithoutInteractionDeprecated(
     SvcObj* self, u8 is_network_service_account_required, nn_account_Uid* uid) {
     (void)self, (void)is_network_service_account_required;
     memcpy(uid->v, g_user_id, 16);
     return 0;
+}
+static int nn_account_IAccountServiceForApplication_TrySelectUserWithoutInteraction(
+    SvcObj* self, u8 is_network_service_account_required, nn_account_Uid* uid) {
+    return nn_account_IAccountServiceForApplication_TrySelectUserWithoutInteractionDeprecated(
+        self, is_network_service_account_required, uid);
 }
 static int nn_account_IAccountServiceForApplication_GetBaasAccountManagerForApplication(SvcObj* self,
                                                                                        const nn_account_Uid* uid,

@@ -430,12 +430,12 @@ if(TARGET OpenSSL::SSL)
     set_tests_properties(ssl_service PROPERTIES TIMEOUT 60)
 endif()
 
-# mm:u and hid's IHidServer (misc.c, hid.c), with the kernel objects stubbed
+# mm:u and the smaller services, hid's IHidServer and acc (misc.c, hid.c, acc.c), with the kernel objects stubbed
 if(TARGET OpenSSL::Crypto)
     add_executable(snx-test-misc-service misc_service.c "${PROJECT_SOURCE_DIR}/src/nx/hle/services/hid_touch.c"
         "${PROJECT_SOURCE_DIR}/src/nx/hle/services/hid_motion.c")
     snx_test_target(snx-test-misc-service 23)
-        snx_service_swipc(snx-test-misc-service hle/services/hid.swipc hle/services/misc.swipc)
+        snx_service_swipc(snx-test-misc-service hle/services/hid.swipc hle/services/misc.swipc hle/services/acc.swipc)
     target_link_libraries(snx-test-misc-service PRIVATE OpenSSL::Crypto)
     if(NOT WIN32)
         target_link_libraries(snx-test-misc-service PRIVATE m)
