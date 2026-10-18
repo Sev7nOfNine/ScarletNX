@@ -3,6 +3,7 @@
 /* The menu's side of the iOS and macOS apps (docs/APPLE.md): the folders, the game the menu plays, and the windows
    SDL's give dist/apple/Frontend.swift to present its pickers and share sheet over */
 #include "gui/apple.h"
+#include "gui/i18n.h"
 #include <SDL3/SDL.h>
 #include <TargetConditionals.h>
 #include <stdbool.h>
@@ -58,14 +59,15 @@ int gui_apple_pick(SDL_Window* window, int folder, SDL_DialogFileCallback done, 
     pick_data = data;
     if (native && snx_apple_pick(native, folder != 0, picked, NULL)) return 1;
     pick_done = NULL;
-    snprintf(message, size, native ? "The document picker did not open." : "No window to show the picker over.");
+    snprintf(message, size, "%s",
+             native ? snx_tr("The document picker did not open.") : snx_tr("No window to show the picker over."));
     return 0;
 }
 
 int gui_apple_share(SDL_Window* window, const char* path, char* message, size_t size) {
     void* native = native_window(window);
     if (native && snx_apple_share(native, path)) return 1;
-    snprintf(message, size, "The log could not be shown: it is at %s", path);
+    snprintf(message, size, snx_tr("The log could not be shown: it is at %s"), path);
     return 0;
 }
 

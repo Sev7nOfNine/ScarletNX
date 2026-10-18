@@ -8,6 +8,7 @@
 #define _DARWIN_C_SOURCE /* libproc's types, which the POSIX name above hides */
 #endif
 #include "gui/gui_process.h"
+#include "gui/i18n.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -167,8 +168,8 @@ static Sample* snapshot(size_t* count) {
         sample->live = true;
         sample->resident = info.ptinfo.pti_resident_size;
         /* the task's times are in Mach ticks, which are not nanoseconds on Apple silicon */
-        sample->cpu = (double)(info.ptinfo.pti_total_user + info.ptinfo.pti_total_system) * timebase.numer /
-                      timebase.denom / 1e9;
+        sample->cpu =
+            (double)(info.ptinfo.pti_total_user + info.ptinfo.pti_total_system) * timebase.numer / timebase.denom / 1e9;
     }
     free(pids);
     return samples;
@@ -191,7 +192,7 @@ bool gui_process_start(GuiProcess* process, const char* const* argv, char* error
     int output[2] = {-1, -1}, failure[2] = {-1, -1};
     int previous_status;
     if (!gui_process_finished(process, &previous_status)) {
-        snprintf(error, size, "A driver is already running");
+        snprintf(error, size, "%s", snx_tr("A driver is already running"));
         return false;
     }
 #if defined(__APPLE__) && TARGET_OS_IPHONE
@@ -200,7 +201,8 @@ bool gui_process_start(GuiProcess* process, const char* const* argv, char* error
     (void)argv;
     (void)output;
     (void)failure;
-    snprintf(error, size, "iOS runs no other programs: prepare games on a computer, then copy them to games/");
+    snprintf(error, size, "%s",
+             snx_tr("iOS runs no other programs: prepare games on a computer, then copy them to games/"));
     return false;
 #endif
     if (pipe(output) || pipe(failure)) goto failed;
@@ -271,7 +273,7 @@ failed:
             if (output[i] >= 0) close(output[i]);
             if (failure[i] >= 0) close(failure[i]);
         }
-        snprintf(error, size, "Cannot launch driver: %s", strerror(saved));
+        snprintf(error, size, snx_tr("Cannot launch driver: %s"), strerror(saved));
         return false;
     }
 }

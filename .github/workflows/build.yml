@@ -245,7 +245,7 @@ jobs:
       - name: Install the build tools and the debloated Mesa
         run: |
           for try in 1 2 3; do
-            pacman -Syu --noconfirm --needed cmake ninja make patch nasm perl clang llvm libgccjit sdl3 libx11 mesa vulkan-icd-loader ccache && break
+            pacman -Syu --noconfirm --needed cmake ninja make patch nasm perl python clang llvm libgccjit sdl3 libx11 mesa vulkan-icd-loader ccache && break
             [ "$try" = 3 ] && exit 1
             sleep 5
           done

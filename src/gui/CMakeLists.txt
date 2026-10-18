@@ -8,10 +8,26 @@ else()
     message(FATAL_ERROR "scarletnx-gui currently supports Linux, FreeBSD, macOS, iOS and Windows")
 endif()
 include("${PROJECT_SOURCE_DIR}/cmake/gui_themes.cmake")
+# The menu's languages (i18n.h): snx_tr and the catalogs' reader, strict ANSI C as the build info; each po/*.po a
+# catalog compiled in, checked and made by scripts/build-languages.py against po/scarletnx.pot
+add_library(snx_i18n STATIC i18n.c)
+set_target_properties(snx_i18n PROPERTIES C_STANDARD ${SNX_C90_STANDARD} C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+target_compile_options(snx_i18n PRIVATE -pedantic-errors -Wall -Wextra -Werror=missing-prototypes)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# target, a library of out made from the .po files of folder
+function(snx_gui_languages target folder out)
+    file(GLOB pos CONFIGURE_DEPENDS "${folder}/*.po")
+    add_custom_command(OUTPUT "${out}"
+        COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/build-languages.py" --out "${out}" ${pos}
+        DEPENDS "${PROJECT_SOURCE_DIR}/scripts/build-languages.py" "${PROJECT_SOURCE_DIR}/po/scarletnx.pot" ${pos}
+        COMMENT "The menu's languages from ${folder}" VERBATIM)
+    add_library(${target} STATIC "${out}")
+endfunction()
+snx_gui_languages(snx_gui_languages "${PROJECT_SOURCE_DIR}/po" "${CMAKE_BINARY_DIR}/generated/gui_languages.c")
 add_library(snx_gui_support STATIC model.c browser.c steps.c theme.c recent.c editor.c settings.c place.c clean.c
             ${gui_process}
             "${CMAKE_BINARY_DIR}/generated/gui_themes.c")
-target_link_libraries(snx_gui_support PUBLIC scarletnx-common)
+target_link_libraries(snx_gui_support PUBLIC scarletnx-common snx_i18n)
 target_include_directories(snx_gui_support PRIVATE "${CMAKE_BINARY_DIR}/generated")
 # The driver configures libgccjit in its own directory scope; its target is
 # visible here even though SNX_GCCJIT_FOUND is not.
@@ -80,7 +96,7 @@ set_target_properties(scarletnx-gui PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED
 target_compile_options(scarletnx-gui PRIVATE -Wall -Wextra -Werror=missing-prototypes)
 target_compile_definitions(scarletnx-gui PRIVATE SNX_SOURCE_DIR="${CMAKE_SOURCE_DIR}" SNX_BUILD_DIR="${CMAKE_BINARY_DIR}")
 target_link_libraries(scarletnx-gui PUBLIC snx_gui_support PRIVATE scarletnx-common SDL3::SDL3 snx_window_icon
-                      snx_build_info snx_pad_sdl snx_splash)
+                      snx_build_info snx_pad_sdl snx_splash snx_gui_languages)
 if(WIN32 AND NOT SNX_BUILD_NX)
     enable_language(RC)
     target_sources(scarletnx-gui PRIVATE ../nx/runtime/platform/runtime.rc)
@@ -92,7 +108,7 @@ endif()
 if(SNX_SDL3_FROM_SOURCE AND NOT SNX_BUILD_NX)
     install(FILES "${SDL3_SOURCE_DIR}/LICENSE.txt" DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/scarletnx/SDL3)
 endif()
-install(FILES FONT-NOTICE.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/scarletnx)
+install(FILES FONT-NOTICE.txt MUSL-NOTICE.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/scarletnx)
 # The built-in themes as files to copy and edit: beside the GUI in the build, in share/scarletnx installed, where it
 # looks for them
 file(GLOB_RECURSE gui_themes RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" CONFIGURE_DEPENDS themes/*/theme.ini)
@@ -138,13 +154,23 @@ if(BUILD_TESTING)
     else()
         add_test(NAME gui_settings COMMAND snx-test-gui-settings)
     endif()
+    add_executable(snx-test-gui-i18n "${PROJECT_SOURCE_DIR}/tests/gui_i18n.c")
+    target_link_libraries(snx-test-gui-i18n PRIVATE snx_i18n snx_gui_languages_test)
+    add_test(NAME gui_i18n COMMAND snx-test-gui-i18n)
+    # po/scarletnx.pot is the code's phrases, and every po/*.po compiles; the script refuses what it should
+    add_test(NAME gui_languages_pot COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/build-languages.py"
+             --check)
+    add_test(NAME gui_languages_script COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tests/languages_test.py")
     add_executable(snx-test-gui-process "${PROJECT_SOURCE_DIR}/tests/gui_process.c")
     target_link_libraries(snx-test-gui-process PRIVATE snx_gui_support scarletnx-common)
     add_test(NAME gui_process_tree COMMAND snx-test-gui-process)
     set_tests_properties(gui_process_tree PROPERTIES TIMEOUT 30)
     add_executable(snx-test-gui-sdl "${PROJECT_SOURCE_DIR}/tests/gui_sdl.c")
+    # a language of its own (tests/po), not the menu's: the screens' checks hold whatever po/ has
+    snx_gui_languages(snx_gui_languages_test "${PROJECT_SOURCE_DIR}/tests/po"
+                      "${CMAKE_BINARY_DIR}/generated/gui_languages_test.c")
     target_link_libraries(snx-test-gui-sdl PRIVATE snx_gui_support scarletnx-common SDL3::SDL3 snx_window_icon
-                          snx_build_info snx_pad_sdl snx_splash)
+                          snx_build_info snx_pad_sdl snx_splash snx_gui_languages_test)
     if(APPLE) # it compiles main.c itself, which calls the frontend (apple.m and its Swift), as scarletnx-gui links it
         target_sources(snx-test-gui-sdl PRIVATE apple.m)
         target_link_libraries(snx-test-gui-sdl PRIVATE snx_apple_frontend "-framework Foundation")
@@ -155,7 +181,7 @@ if(BUILD_TESTING)
         add_test(NAME gui_sdl_events COMMAND snx-test-gui-sdl)
         # no file picker of the desktop's: the portal would open one on the screen, DBus being there without a display
         set_tests_properties(gui_sdl_events PROPERTIES TIMEOUT 30
-                             ENVIRONMENT "SDL_VIDEO_DRIVER=dummy;SDL_RENDER_DRIVER=software;SDL_FILE_DIALOG_DRIVER=none")
+                             ENVIRONMENT "SDL_VIDEO_DRIVER=dummy;SDL_RENDER_DRIVER=software;SDL_FILE_DIALOG_DRIVER=none;SDL_PREFERRED_LOCALES=en_US")
     endif()
     # every test here, as snx_test_target does: warnings are errors, and the asserts stay in any build type
     get_directory_property(gui_tests BUILDSYSTEM_TARGETS)

@@ -2,6 +2,7 @@
    Copyright 2026 the ScarletNX contributors */
 #include "gui/editor.h"
 #include "common/utilities/common.h"
+#include "gui/i18n.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,8 +63,8 @@ static void change(GuiEditor* editor, const GuiThemeKey* key, int step) {
         *(uint32_t*)field = (uint32_t)(v<0 ? 0 : v>(long) key->max ? (long)key->max : v);
     } else {
         snprintf(editor->note, sizeof editor->note, "%s",
-                 key->type == GUI_KEY_COLOUR ? "Select to pick it, or type it as #RRGGBB"
-                                             : "Select to type it: its text");
+                 key->type == GUI_KEY_COLOUR ? snx_tr("Select to pick it, or type it as #RRGGBB")
+                                             : snx_tr("Select to type it: its text"));
         return;
     }
     editor->dirty = true;
@@ -104,7 +105,7 @@ static GuiEditorDo pick_key(GuiEditor* editor, GuiKey key) {
     else if (step && editor->channel < GUI_PICK_HEX)
         gui_editor_pick(editor, editor->channel, *channel_of(gui_editor_colour(editor), editor->channel) + step);
     else if (step)
-        snprintf(editor->note, sizeof editor->note, "Select to type it: #RRGGBB");
+        snprintf(editor->note, sizeof editor->note, "%s", snx_tr("Select to type it: #RRGGBB"));
     else if (key == GUI_SELECT && editor->channel == GUI_PICK_HEX) {
         gui_editor_value(editor, editor->row, editor->text, sizeof editor->text);
         editor->typing = true;
@@ -117,17 +118,18 @@ static void take(GuiEditor* editor) {
     const GuiThemeKey* key = gui_editor_key_of(editor, editor->row);
     if (!key) {
         if (!folder_name(editor->text)) {
-            snprintf(editor->note, sizeof editor->note,
-                     "A folder name: letters, digits, spaces, - _ and ., not starting with .");
+            snprintf(editor->note, sizeof editor->note, "%s",
+                     snx_tr("A folder name: letters, digits, spaces, - _ and ., not starting with ."));
             return;
         }
         snprintf(editor->id, sizeof editor->id, "%s", editor->text);
     } else if (!gui_theme_set(object(editor), key, editor->text)) {
         if (key->type == GUI_KEY_TEXT)
-            snprintf(editor->note, sizeof editor->note, "At most %u bytes", (unsigned)key->size - 1);
+            snprintf(editor->note, sizeof editor->note, snx_tr("At most %u bytes"), (unsigned)key->size - 1);
         else
             snprintf(editor->note, sizeof editor->note, "%s",
-                     key->type == GUI_KEY_COLOUR ? "A colour: #RRGGBB, as #1A2B3C" : "A whole number, 0 to 10000");
+                     key->type == GUI_KEY_COLOUR ? snx_tr("A colour: #RRGGBB, as #1A2B3C")
+                                                 : snx_tr("A whole number, 0 to 10000"));
         return;
     }
     editor->typing = false;
@@ -182,7 +184,8 @@ GuiEditorDo gui_editor_key(GuiEditor* editor, GuiKey key) {
         case GUI_CANCEL:
             if (!editor->dirty || leaving || editor->object) return GUI_EDITOR_LEAVE;
             editor->leaving = true;
-            snprintf(editor->note, sizeof editor->note, "Not saved: ESC again leaves without it, Save keeps it");
+            snprintf(editor->note, sizeof editor->note, "%s",
+                     snx_tr("Not saved: ESC again leaves without it, Save keeps it"));
             break;
     }
     return GUI_EDITOR_STAY;
@@ -205,9 +208,12 @@ void gui_editor_label(const GuiEditor* editor, int row, char* out, size_t size) 
     const GuiThemeKey *k = gui_editor_key_of(editor, row), *before = gui_editor_key_of(editor, row - 1);
     int first = k && (!before || strcmp(before->section, k->section));
     if (!k)
-        snprintf(out, size, "%s", editor->object ? editor->action : row == GUI_EDITOR_FOLDER ? "Folder" : "Save");
-    else if (editor->flat)
-        snprintf(out, size, "%s", k->key);
+        snprintf(out, size, "%s",
+                 editor->object             ? snx_tr(editor->action)
+                 : row == GUI_EDITOR_FOLDER ? snx_tr("Folder")
+                                            : snx_tr("Save"));
+    else if (editor->flat) /* a form's rows are the menu's words; the theme's, the file's keys */
+        snprintf(out, size, "%s", editor->object ? snx_tr(k->key) : k->key);
     else
         snprintf(out, size, "%-11s %s", first ? k->section : "", k->key);
 }
@@ -229,10 +235,10 @@ int gui_editor_save(GuiEditor* editor, const char* themes_dir) {
     char* text = gui_theme_write(&editor->theme, &editor->file);
     int failed = !path || !text || snx_mkdirs(folder) || snx_write_file(path, text, strlen(text));
     if (failed)
-        snprintf(editor->note, sizeof editor->note, "Not saved: %s could not be written",
-                 path ? path : "the themes folder");
+        snprintf(editor->note, sizeof editor->note, snx_tr("Not saved: %s could not be written"),
+                 path ? path : snx_tr("the themes folder"));
     else {
-        snprintf(editor->note, sizeof editor->note, "Saved in %s", path);
+        snprintf(editor->note, sizeof editor->note, snx_tr("Saved in %s"), path);
         editor->dirty = false;
     }
     free(text);

@@ -2,6 +2,7 @@
    Copyright 2026 the ScarletNX contributors */
 #include "gui/clean.h"
 #include "common/utilities/common.h"
+#include "gui/i18n.h"
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -88,7 +89,7 @@ static int clean_ini(GuiCleaned* done, const char* path) {
     int found = 0;
     text = snx_is_file(path) ? (char*)snx_read_file(path, &size) : NULL;
     if (!text && snx_is_file(path) && done) {
-        snprintf(what, sizeof what, "Not read: %s", strerror(errno));
+        snprintf(what, sizeof what, snx_tr("Not read: %s"), strerror(errno));
         gui_cleaned_add(done, false, path, what);
     }
     kept = text ? gui_clean_deprecated(text, size) : size;
@@ -99,10 +100,10 @@ static int clean_ini(GuiCleaned* done, const char* path) {
             staged = snx_format("%s.new", path);
             failed = !staged || snx_write_file(staged, text, kept) || snx_replace(staged, path);
             if (failed) {
-                snprintf(what, sizeof what, "Not written without [Deprecated]: %s", strerror(errno));
+                snprintf(what, sizeof what, snx_tr("Not written without [Deprecated]: %s"), strerror(errno));
                 if (staged) remove(staged);
             }
-            gui_cleaned_add(done, !failed, path, failed ? what : "[Deprecated] taken out");
+            gui_cleaned_add(done, !failed, path, failed ? what : snx_tr("[Deprecated] taken out"));
             free(staged);
         }
     }

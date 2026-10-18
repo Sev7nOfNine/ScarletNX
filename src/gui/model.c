@@ -3,6 +3,7 @@
 #include "gui/model.h"
 #include "common/utilities/common.h"
 #include "common/utilities/font.h"
+#include "gui/i18n.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -99,27 +100,31 @@ void gui_usage_text(char* out, size_t size, bool available, uint64_t memory_byte
     double n = cores > 0 ? cores : 1, used = cpu_percent / 100;
     char ram[32];
     if (!available) {
-        snprintf(out, size, "GUI + children: resource usage unavailable");
+        snprintf(out, size, "%s", snx_tr("GUI + children: resource usage unavailable"));
         return;
     }
     used = used < 0 ? 0 : used > n ? n : used; /* a sample taken over a little more than its interval */
     gui_size_text(ram, sizeof ram, memory_bytes);
-    snprintf(out, size, "GUI + children: RAM %s  CPU %.0f%% (%.1f cores)", ram, used / n * 100, used);
+    snprintf(out, size, snx_tr("GUI + children: RAM %s  CPU %.0f%% (%.1f cores)"), ram, used / n * 100, used);
 }
 const char* gui_setting_description(const GuiMenu* menu) {
     switch (menu->selected) {
-        case GUI_SETTINGS: return "The game's .ini settings, the launcher's for the next runs, and its theme";
+        case GUI_SETTINGS: return snx_tr("The game's .ini settings, the launcher's for the next runs, and its theme");
         case GUI_LOG:
 #ifdef __ANDROID__
-            return "Saves the last run's output and game log to scarletnx.log in the data folder, then shares it";
+            return snx_tr(
+                "Saves the last run's output and game log to scarletnx.log in the data folder, then shares it");
 #elif defined(SNX_XDG)
-            return "Saves the last run's output and game log to scarletnx.log in the working folder (an installed "
-                   "copy's: its state folder), path copied";
+            return snx_tr(
+                "Saves the last run's output and game log to scarletnx.log in the working folder (an installed "
+                "copy's: its state folder), path copied");
 #else
-            return "Saves the last run's output and game log to scarletnx.log in the working folder, path copied";
+            return snx_tr(
+                "Saves the last run's output and game log to scarletnx.log in the working folder, path copied");
 #endif
 #ifdef __ANDROID__
-        case GUI_DATA: return "Opens the data folder, games/ and the keys among them, in the system's Files app";
+        case GUI_DATA:
+            return snx_tr("Opens the data folder, games/ and the keys among them, in the system's Files app");
 #endif
         default: return "";
     }

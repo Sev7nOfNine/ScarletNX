@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <psapi.h>
 #include "gui/gui_process.h"
+#include "gui/i18n.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -79,7 +80,7 @@ GuiProcess* gui_process_create(void) {
 bool gui_process_start(GuiProcess* process, const char* const* argv, char* error, size_t size) {
     int previous_status;
     if (!gui_process_finished(process, &previous_status)) {
-        snprintf(error, size, "A driver is already running");
+        snprintf(error, size, "%s", snx_tr("A driver is already running"));
         return false;
     }
     process->retired_cpu += job_cpu(process->job);
@@ -151,7 +152,7 @@ done:
     free(startup.lpAttributeList);
     free(command);
     free(executable);
-    if (!success) snprintf(error, size, "Cannot launch driver (Windows error %lu)", (unsigned long)failure);
+    if (!success) snprintf(error, size, snx_tr("Cannot launch driver (Windows error %lu)"), (unsigned long)failure);
     return success;
 }
 int gui_process_read(GuiProcess* process, char* buffer, size_t size) {

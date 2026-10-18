@@ -24,7 +24,7 @@ Run from checkout root. [Extract/AOT/run](USAGE.md) · [Tests/diagnostics](DEVEL
 
 - **Linux / FreeBSD:** Clang (CI: 23; FreeBSD's system Clang also works), LLVM's development files
   (`llvm-config`, required by the recompiler), CMake ≥3.25, Ninja, POSIX shell, GNU make (`gmake` on FreeBSD),
-  NASM on x86-64, Perl, Git, pkg-config and `patch`.
+  NASM on x86-64, Perl, Python 3 (the menu's languages), Git, pkg-config and `patch`.
   Use a system SDL3 development package, or X11/Wayland and audio development libraries for the bundled
   SDL3 build.
 - **Windows:** Win10/11 x64. CI builds in MSYS2's CLANG64 environment, which has LLVM's development files
@@ -50,7 +50,7 @@ system include; Fedora lists it below.
 
 ```sh
 sudo apt update
-sudo apt install build-essential git cmake ninja-build clang llvm-dev nasm pkg-config \
+sudo apt install build-essential git cmake ninja-build clang llvm-dev nasm pkg-config python3 \
   libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev \
   libasound2-dev libpulse-dev libpipewire-0.3-dev
 ```
@@ -83,7 +83,7 @@ Vulkan-capable NVIDIA driver.
 ### Fedora
 
 ```sh
-sudo dnf install clang cmake ninja-build nasm make perl git pkgconf-pkg-config patch llvm-devel \
+sudo dnf install clang cmake ninja-build nasm make perl git pkgconf-pkg-config patch llvm-devel python3 \
   libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel libXfixes-devel \
   libXScrnSaver-devel libXtst-devel alsa-lib-devel pulseaudio-libs-devel pipewire-devel
 ```
@@ -108,7 +108,7 @@ sudo dnf install wayland-devel libxkbcommon-devel wayland-protocols-devel libdec
 ### Arch Linux
 
 ```sh
-sudo pacman -Syu --needed base-devel git cmake ninja clang llvm nasm perl pkgconf sdl3
+sudo pacman -Syu --needed base-devel git cmake ninja clang llvm nasm perl pkgconf python sdl3
 ```
 
 ### FreeBSD
@@ -116,7 +116,7 @@ sudo pacman -Syu --needed base-devel git cmake ninja clang llvm nasm perl pkgcon
 FreeBSD provides Clang in the base system. Install the remaining tools and the SDL3 package:
 
 ```sh
-sudo pkg install git cmake ninja gmake nasm perl5 pkgconf sdl3 llvm
+sudo pkg install git cmake ninja gmake nasm perl5 pkgconf python3 sdl3 llvm
 ```
 
 ### Configure and build
@@ -212,7 +212,7 @@ runtime must not mix with another LLVM build.
      mingw-w64-clang-x86_64-pkgconf mingw-w64-clang-x86_64-python mingw-w64-clang-x86_64-spirv-tools
    ```
 
-   Python and spirv-tools are only for the `shader_direct` test. CI also installs ccache, and UCRT64's libgccjit and
+   Python builds the menu's languages; spirv-tools is only for the `shader_direct` test. CI also installs ccache, and UCRT64's libgccjit and
    binutils for the optional `--backend=gcc` ([gccjit.cmake](../cmake/gccjit.cmake)). Neither is needed here.
 3. Clone to a path without spaces:
 
@@ -364,7 +364,8 @@ running full runtime; the tools-only build creates one in its checkout's `build/
 (`~/.local/share/scarletnx`, `%APPDATA%\scarletnx` on Windows), and on Linux the XDG config, state and cache folders
 hold its settings, logs and caches ([USAGE](USAGE.md#folders)). `--repo DIR` before the command names another data
 folder, `--build-dir DIR` another build tree.
-Python ≥3.12 is optional for `tools/*.py` diagnostics.
+The menu (`SNX_BUILD_GUI`) needs Python 3 to build its languages (`scripts/build-languages.py`,
+[GUI](GUI.md#languages)). Python ≥3.12 is optional for `tools/*.py` diagnostics.
 
 ## Install / AppImage
 

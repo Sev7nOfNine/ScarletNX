@@ -2,6 +2,7 @@
    Copyright 2026 the ScarletNX contributors */
 #include "gui/browser.h"
 #include "common/utilities/common.h"
+#include "gui/i18n.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -154,7 +155,7 @@ static bool add_games(GuiGames* games, const char* directory, int kinds, size_t 
     char **names = NULL, **more;
     size_t count = 0, i;
     if (snx_list_dir(directory, &names, &count)) {
-        snprintf(error, size, "Cannot open %s.", directory);
+        snprintf(error, size, snx_tr("Cannot open %s."), directory);
         return false;
     }
     size_t j;
@@ -166,7 +167,7 @@ static bool add_games(GuiGames* games, const char* directory, int kinds, size_t 
     if (more) games->paths = more;
     if (!more) {
         snx_free_strings(names, count);
-        snprintf(error, size, "Not enough memory to list %s.", directory);
+        snprintf(error, size, snx_tr("Not enough memory to list %s."), directory);
         return false;
     }
     for (i = 0; i < count; ++i) {
@@ -225,9 +226,14 @@ bool gui_has_folders(const char* directory, int kinds) {
     return found;
 }
 bool gui_games_scan(GuiGames* games, const char* directory, bool cia, char* error, size_t size) {
+    char* open;
     gui_games_free(games);
     if (gui_games_add(games, directory, cia ? GUI_GAMES_CIA : GUI_GAMES_RUN, error, size)) return true;
-    if (!strncmp(error, "Cannot open", 11))
-        snprintf(error, size, "Cannot open games/. Create it in the displayed working directory.");
+    /* the folder could not be read, not the memory: in whatever language the error came */
+    open = size ? (char*)malloc(size) : NULL;
+    if (open) snprintf(open, size, snx_tr("Cannot open %s."), directory);
+    if (open && !strcmp(error, open))
+        snprintf(error, size, "%s", snx_tr("Cannot open games/. Create it in the displayed working directory."));
+    free(open);
     return false;
 }

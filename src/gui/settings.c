@@ -3,6 +3,7 @@
 #include "gui/settings.h"
 #include "common/utilities/common.h"
 #include "common/utilities/ini_lines.h"
+#include "gui/i18n.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,10 +73,12 @@ int gui_settings_read(GuiSettings* s, const char* list) {
     free_words = (const char**)(s->values + n);
     text = memcpy(free_words + pool, list, size);
     memset(s->values, 0, n * sizeof *s->values);
-    row(s, "Launch", "libgccjit", NULL,
-        SNX_GUI_HAS_GCCJIT ? "libgccjit will be used instead of llvm" : "Program was not compiled with libgccjit",
+    /* the section is settings.ini's too: the menu shows it translated */
+    row(s, SNX_TR_NOOP("Launch"), "libgccjit", NULL,
+        SNX_GUI_HAS_GCCJIT ? SNX_TR_NOOP("libgccjit will be used instead of llvm")
+                           : SNX_TR_NOOP("Program was not compiled with libgccjit"),
         SNX_GUI_HAS_GCCJIT ? off_on : off, GUI_KEY_WORD);
-    row(s, "Launch", "gdbstub", NULL, "Enables gdbstub on port 1234", off_on, GUI_KEY_WORD);
+    row(s, "Launch", "gdbstub", NULL, SNX_TR_NOOP("Enables gdbstub on port 1234"), off_on, GUI_KEY_WORD);
     for (line = text; *line; line = next) {
         char* field[9];
         const char **words = NULL, **values = NULL;
@@ -90,14 +93,15 @@ int gui_settings_read(GuiSettings* s, const char* list) {
         if (page && strcmp(page, field[0])) page = NULL;
         if (!page && strchr(field[0], '/')) { /* a page: its row in the section, and its All first on it */
             page = field[0];
-            link =
-                row(s, NULL, strchr(page, '/') + 1, NULL, "Its own page, as in the game's menu", NULL, GUI_KEY_ACTION);
+            link = row(s, NULL, strchr(page, '/') + 1, NULL, SNX_TR_NOOP("Its own page, as in the game's menu"), NULL,
+                       GUI_KEY_ACTION);
             snprintf(link->option, sizeof link->option, "%.*s", (int)(strchr(page, '/') - page), page);
             s->keys[s->count - 1].section = link->option;
             snprintf(link->text, sizeof link->text, ">");
             link->kind = GUI_SETTING_PAGE;
             link->first = s->count;
-            all = row(s, page, "All", NULL, "Every row of this page at once", NULL, GUI_KEY_ACTION);
+            all = row(s, page, SNX_TR_NOOP("All"), NULL, SNX_TR_NOOP("Every row of this page at once"), NULL,
+                      GUI_KEY_ACTION);
             all->kind = GUI_SETTING_ALL;
             all->first = s->count;
         }
@@ -247,17 +251,17 @@ void gui_settings_sync(GuiSettings* s) {
             gui_theme_get(s->values, &s->keys[i], word, sizeof word);
             if (strcmp(word, first)) break;
         }
-        snprintf(all->text, sizeof all->text, "%s", i < all->first + all->count ? "Mixed" : first);
+        snprintf(all->text, sizeof all->text, "%s", i < all->first + all->count ? snx_tr("Mixed") : first);
     }
 }
 void gui_settings_shown(const GuiSettings* s, int row, char* out, size_t size) {
     const GuiSetting* v = &s->values[row];
     if (v->kind == GUI_SETTING_ALL)
-        snprintf(out, size, "%s", strcmp(v->text, ".ini") ? v->text : "[default]");
+        snprintf(out, size, "%s", strcmp(v->text, ".ini") ? v->text : snx_tr("[default]"));
     else if (!v->fallback || picked(s, row))
         gui_theme_get(s->values, &s->keys[row], out, size);
     else
-        snprintf(out, size, "%s%s[default]", v->fallback, v->fallback[0] ? " " : "");
+        snprintf(out, size, "%s%s%s", v->fallback, v->fallback[0] ? " " : "", snx_tr("[default]"));
 }
 const char* gui_settings_value(const GuiSettings* s, const char* key) {
     int i = find(s, key);

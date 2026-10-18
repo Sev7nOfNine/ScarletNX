@@ -3,6 +3,7 @@
 #include "gui/android.h"
 #include "gui/model.h"
 #include "common/utilities/common.h"
+#include "gui/i18n.h"
 #include <SDL3/SDL.h>
 #include <dlfcn.h>
 #include <jni.h>
@@ -75,7 +76,7 @@ static int call(const char* method, const char* signature, const jvalue* args, c
     jmethodID id;
     int ok;
     if (!env || !activity) {
-        snprintf(message, size, "No Android activity to ask.");
+        snprintf(message, size, "%s", snx_tr("No Android activity to ask."));
         return 0;
     }
     activity_class = (*env)->GetObjectClass(env, activity);
@@ -85,7 +86,7 @@ static int call(const char* method, const char* signature, const jvalue* args, c
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
     (*env)->DeleteLocalRef(env, activity_class);
     (*env)->DeleteLocalRef(env, activity);
-    if (!ok) snprintf(message, size, "MainActivity.%s did not run.", method);
+    if (!ok) snprintf(message, size, snx_tr("MainActivity.%s did not run."), method);
     return ok;
 }
 

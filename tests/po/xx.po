@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# A language for the tests (tests/gui_i18n.c, tests/gui_sdl.c), not the menu's: a few phrases of po/scarletnx.pot,
+# a plain one, one not ASCII, formats, a foot's keys and a key of theirs.
+msgid ""
+msgstr ""
+"Project-Id-Version: ScarletNX\n"
+"Language: xx\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Language-Name: Testês\n"
+
+msgid "Settings"
+msgstr "Ajustes"
+
+msgid "Language"
+msgstr "Língua"
+
+#, c-format
+msgid "Auto: %s"
+msgstr "Automático: %s"
+
+#, c-format
+msgid "Not used from %s: %s"
+msgstr "Fora de uso em %s: %s"
+
+#, snx-key
+msgid "Back"
+msgstr "Volta"
+
+#, snx-keys
+msgid "Up/Down: row. Left/Right: change. Enter: change or open. ESC: back."
+msgstr "Up/Down: linha. Left/Right: muda. Enter: muda ou abre. ESC: volta."
+
+#, snx-keys
+msgid "Tab: screen."
+msgstr "Tab: tela."
+
+# not translated yet: English
+msgid "Exit"
+msgstr ""
+
+#, fuzzy
+msgid "Games"
+msgstr "Jogos?"

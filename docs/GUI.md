@@ -8,13 +8,14 @@
 * [Output and resource use](#output-and-resource-use)
 * [Themes](#themes)
   * [Theme formats](#theme-formats)
+* [Languages](#languages)
 * [Building and testing](#building-and-testing)
 
 `scarletnx` started with no arguments (or a model's name, or the AppImage), with no game of its
 name beside it, opens its launcher: a small SDL3 menu for the command-line drivers. A copy named
 after a game, without its code, says so and never opens it. It uses an
-embedded public-domain 8x16 VGA BIOS font, nearest-neighbor integer scaling, and
-English text only. No font files or localization packages are needed.
+embedded public-domain 8x16 VGA BIOS font and nearest-neighbor integer scaling, and its words are English or a
+language compiled into it ([Languages](#languages)). No font files or localization packages are needed.
 
 ```sh
 ./build/scarletnx
@@ -95,7 +96,7 @@ built in, drawn at the window's size ([lunasvg](https://github.com/sammycage/lun
   dead zone, background input, Joy-Cons). A player's *Controller* is *Any*, the next to connect, until Enter on it
   and a press on a controller give it that one (ESC leaves it as it was, Del makes it *Any* again); its *Button
   map* is the page above on its own keys, its A and B as its *Swap A/B* says.
-  **App** holds **Theme** and **Text size**, which Left/Right or Enter go round either way, **Theme editor**, which comes back to App, and **Library**: first `games/`,
+  **App** holds **Theme**, **Text size** and **Language**, which Left/Right or Enter go round either way, **Theme editor**, which comes back to App, and **Library**: first `games/`,
   where recompiled games go: Enter there picks another, as **Folders > Games** does; at its default it stays on the
   list (the foot's Del greyed), and a folder picked goes back to the default with Del pressed twice, only the setting
   changing. Then the player's own folders, whose games the `games/` browser lists after
@@ -140,8 +141,9 @@ built in, drawn at the window's size ([lunasvg](https://github.com/sammycage/lun
 - Settings > App's **Theme** switches to the next theme, or the one before: the built-in Default
   and YoRHa, then each folder of `themes/` (see [Themes](#themes)). The menu opens in YoRHa until one is picked.
   It is kept for the next start,
-  as is Text size, in `app.ini` beside `settings.ini`: `[app]` with `theme` (a theme's folder
-  name) and `text_size` (`auto` or 1 to 4), and once one is picked `[folders]` with Folders' `data`, `games` and
+  as are Text size and Language, in `app.ini` beside `settings.ini`: `[app]` with `theme` (a theme's folder
+  name), `text_size` (`auto` or 1 to 4) and `language` (`auto`, `en` or a language's code, as `pt_BR`), and once one
+  is picked `[folders]` with Folders' `data`, `games` and
   `work` (a full path, nothing for the default). A value the
   menu does not know, or a theme no longer there, is named in the menu's message as it opens and
   left out; a file that cannot be written is named in App's note.
@@ -158,6 +160,11 @@ built in, drawn at the window's size ([lunasvg](https://github.com/sammycage/lun
 - Settings > App's **Text size** steps the menu's letters through Auto (fit the screen) and four
   sizes. Bigger letters scroll the menu. The foot's letters (its keys, and the tips when they are
   there) are a size under the rest's, 1x at the least.
+- Settings > App's **Language** goes round Auto, English and each language compiled in, by its own name. Auto,
+  the default, takes the first of the system's languages (SDL's preferred locales) the menu has: that language for
+  that country, else the language with no country of its own, else the language for another country (Portuguese of
+  Portugal reads `pt_BR` when it is the only Portuguese), else English; the row says which it took. The words change
+  at once; a phrase the language has not translated stays English.
 - **Share log** saves the last run's output and game log to `scarletnx.log`. On the
   desktop it goes in the working folder with its path copied. On Android it goes to the
   data folder's `state/` and is shared.
@@ -460,6 +467,35 @@ ErET needs `[theme] layout`, so the built-in files carry one: `debug` and `menu`
   files never lean on a built-in's values, which may change. It reads an older file as that
   format reads, and writes it in the current one.
 
+## Languages
+
+The menu's phrases are English in its code, each through `snx_tr` (`src/gui/i18n.h`). `po/scarletnx.pot` lists
+them, made from the code by `scripts/build-languages.py --pot`; the `gui_languages_pot` test fails when it is not what
+the code says. A language is a `po/<code>.po` (`pt_BR.po`, `de.po`), gettext's format: the build makes each one a
+catalog of gettext's `.mo` format compiled into the menu, which reads it with musl's `__mo_lookup`
+(`src/gui/i18n.c`). A new one starts as a copy of the `.pot` whose header names it, in UTF-8:
+
+```po
+"Language: de\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"X-Language-Name: Deutsch\n"
+```
+
+`X-Language-Name` is what Settings > App > Language shows. `msgmerge -U po/de.po po/scarletnx.pot` (gettext's tools)
+brings a translation up to the code; a phrase it leaves empty, or marks `fuzzy`, stays English. The build refuses a
+`.po` that:
+
+- changes a phrase's printf conversions (`%s`, `%d`, `%zu`, `%.*s`) in number, order or type, uses numbered ones
+  (`%1$s`) or `%n`, or has a `%` its English does not: C's printf takes the arguments in the order the code gives;
+- changes the keys of a foot's sentences (`#, snx-keys`, "Key: what it does."): each key stays as it is, or as the
+  same file translates it (`#, snx-key`, as `Back`), since a click on the foot finds a key by its word, and a sentence
+  greyed (`~`, one its screen cannot do now) stays greyed;
+- has contexts (`msgctxt`), plurals (`msgid_plural`), a phrase twice, or is not UTF-8.
+
+The runtime's settings stay as the runtime names them (their groups, names, help and words come from
+`scarletnx --settings`), as do the Controllers' button map page, drawn as the game's menu draws it, the theme
+editor's rows (the file's own keys) and the lines Share log adds for us.
+
 ## Building and testing
 
 The NX build enables `SNX_BUILD_GUI` by default. Disable it with
@@ -489,6 +525,9 @@ accounting and process-tree cleanup. Browser tests cover filtering, missing/empt
 directories, pagination, resizing, Back/ESC, launching selected files and R's recompile.
 Key setup tests cover installation, replacement, invalid drops, failed writes,
 self-copy safety, cancellation, and the bright-red overwrite warning.
+Language tests cover a catalog's search in either byte order, catalogs cut or pointing out of themselves, the language
+Auto picks from the system's locales, English where a language has none, the Language row and `app.ini`'s key, and
+the script's refusals; they use a language of their own, `tests/po/xx.po`.
 Settings tests cover the runtime's list read into rows, picks, the options each combination
 passes, and the screens of its groups and App; menu tests cover mouse hover versus explicit
 activation, the menu without the games and Games with Add a folder and the recent games' show-more row,

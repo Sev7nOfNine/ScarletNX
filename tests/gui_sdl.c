@@ -1422,7 +1422,7 @@ int main(int argc, char** argv) {
     /* App: the theme and the letters, either way round, and the theme editor, which comes back here */
     app.editor.row = 0;
     key(&app, SDLK_RETURN);
-    assert(app.form == GUI_FORM_APP && app.editor.row == GUI_APP_THEME && GUI_APP_ROWS == 6);
+    assert(app.form == GUI_FORM_APP && app.editor.row == GUI_APP_THEME && GUI_APP_ROWS == 7);
     {
         char first[64], line[1024];
         snprintf(first, sizeof first, "%s", app.theme.name);
@@ -1431,6 +1431,7 @@ int main(int argc, char** argv) {
         snprintf(line, sizeof line, "- %-18s %s", "Theme", first);
         shows(&app, line, yellow);
         shows(&app, "- Text size          Auto", normal);
+        shows(&app, "- Language           Auto: English", normal); /* SDL_PREFERRED_LOCALES, the test's */
         shows(&app, "- Theme editor", normal);
         /* under the rows, the three folders Folders moves, whole: the extractions too */
         shows(&app, "- Folders            Defaults", normal);
@@ -1484,8 +1485,10 @@ int main(int argc, char** argv) {
         key(&app, SDLK_RIGHT); /* the next theme */
         snprintf(id, sizeof id, "%s", app.theme.id);
         assert(strcmp(id, first_id));
-        snprintf(expected, sizeof expected,
-                 "; Settings > App in the launcher, as they were left\n[app]\ntheme = %s\ntext_size = 1\n", id);
+        snprintf(
+            expected, sizeof expected,
+            "; Settings > App in the launcher, as they were left\n[app]\ntheme = %s\ntext_size = 1\nlanguage = auto\n",
+            id);
         kept = (char*)snx_read_file(app.app_file, &size);
         assert(kept && size == strlen(expected) && !memcmp(kept, expected, size));
         free(kept);
@@ -1501,7 +1504,8 @@ int main(int argc, char** argv) {
         key(&app, SDLK_LEFT);
         assert(!strcmp(app.theme.id, first_id) && !app.menu.text_size && !app.editor.note[0]);
         snprintf(expected, sizeof expected,
-                 "; Settings > App in the launcher, as they were left\n[app]\ntheme = %s\ntext_size = auto\n",
+                 "; Settings > App in the launcher, as they were left\n[app]\ntheme = %s\ntext_size = auto\n"
+                 "language = auto\n",
                  first_id);
         kept = (char*)snx_read_file(app.app_file, &size);
         assert(kept && size == strlen(expected) && !memcmp(kept, expected, size));
@@ -1530,6 +1534,70 @@ int main(int argc, char** argv) {
         remove(blocker);
         free(blocker);
         app.editor.note[0] = 0;
+    }
+    /* Language: Auto (the system's: English here, SDL_PREFERRED_LOCALES), English, then the test's xx (tests/po), round
+       either way; kept in app.ini and read back; its words on the screens, a key of the foot found by its own */
+    {
+        size_t size = 0;
+        char *kept, expected[512], line[128];
+        const char* other = "[app]\nlanguage = xx\n";
+        const char* unknown = "[app]\nlanguage = tlh\n";
+        open_app(&app, GUI_APP_LANGUAGE);
+        assert(!app.language && snx_tr_language() == 0 && !strcmp(app.app_form.language, "Auto: English"));
+        key(&app, SDLK_RIGHT);
+        assert(app.language == 1 && snx_tr_language() == 0 && !strcmp(app.app_form.language, "English"));
+        key(&app, SDLK_RETURN); /* Enter goes round too */
+        assert(app.language == 2 && snx_tr_language() == 1 && !strcmp(app.app_form.language, "Test\303\252s"));
+        snprintf(expected, sizeof expected,
+                 "; Settings > App in the launcher, as they were left\n[app]\ntheme = %s\ntext_size = auto\n"
+                 "language = xx\n",
+                 app.theme.id);
+        kept = (char*)snx_read_file(app.app_file, &size);
+        assert(kept && size == strlen(expected) && !memcmp(kept, expected, size));
+        free(kept);
+        render(&app);
+        /* the labels' columns as they read: xx's Language, its i accented, is 6 of them in 7 bytes (the font's one) */
+        snprintf(line, sizeof line, "- L\241ngua%12s Test", "");
+        shows(&app, line, yellow);
+        shows(&app, "- Text size", normal); /* not translated in xx: English */
+        shows(&app, "Ajustes", yellow);     /* the tab */
+        shows_foot(&app, "linha", normal);
+        shows_foot(&app, "tela", normal);
+        hides_foot(&app, "change or open", normal);
+        key(&app, SDLK_RIGHT);
+        assert(!app.language && snx_tr_language() == 0); /* Auto again: English */
+        key(&app, SDLK_LEFT);
+        assert(app.language == 2 && snx_tr_language() == 1);
+        /* a start with them: xx as it was left, a language the menu does not have named and left out */
+        app.language = 0;
+        language_apply(&app);
+        assert(!snx_write_file(app.app_file, other, strlen(other)));
+        app.message[0] = 0;
+        app_load(&app);
+        assert(app.language == 2 && snx_tr_language() == 1 && !app.message[0]);
+        assert(!snx_write_file(app.app_file, unknown, strlen(unknown)));
+        app_load(&app);
+        assert(app.language == 2 && snx_tr_language() == 1);
+        snprintf(expected, sizeof expected, "Fora de uso em %s: language = tlh", app.app_file); /* in xx: its words */
+        assert(!strcmp(app.message, expected));
+        app.message[0] = 0;
+        /* the foot's Back, as xx says it, presses Back: the App's rows left for the groups */
+        assert(hint_press(&app, "Volta", 0) && app.editing && app.form == GUI_FORM_SETTINGS);
+        assert(hint_press(&app, "Back", 0) && !app.editing); /* and as English does */
+        /* Auto: the first of the system's languages the menu has, for its country or another; English for none. Over
+           the test's SDL_PREFERRED_LOCALES, which a hint of normal priority does not override */
+        SDL_SetHintWithPriority(SDL_HINT_PREFERRED_LOCALES, "ja_JP,xx_YY,en_US", SDL_HINT_OVERRIDE);
+        assert(language_auto() == 1);
+        SDL_SetHintWithPriority(SDL_HINT_PREFERRED_LOCALES, "ja_JP,en_US,xx", SDL_HINT_OVERRIDE);
+        assert(language_auto() == 0);
+        SDL_SetHintWithPriority(SDL_HINT_PREFERRED_LOCALES, "ja_JP", SDL_HINT_OVERRIDE);
+        assert(language_auto() == 0);
+        SDL_ResetHint(SDL_HINT_PREFERRED_LOCALES); /* the test's own again, en_US */
+        assert(language_auto() == 0);
+        /* English for what follows, kept so, on App as the next part opens it */
+        open_app(&app, GUI_APP_LANGUAGE);
+        key(&app, SDLK_RIGHT);
+        assert(!app.language && snx_tr_language() == 0);
     }
     /* Clean old settings, Enter twice: the first says what it would do, another key in between starts again, the
        second does it and shows what it did over the screen, until a key closes it; then there is nothing left */
