@@ -587,6 +587,10 @@ static int nn_audio_detail_IAudioDevice_GetActiveAudioDeviceNameAuto(SvcObj* sel
 static int nn_audio_detail_IAudioDevice_GetActiveAudioOutputDeviceName(SvcObj* self, IpcBuf name) {
     return nn_audio_detail_IAudioDevice_GetActiveAudioDeviceName(self, name);
 }
+/* the outputs there are: the one device, as GetActiveAudioOutputDeviceName names it */
+static int nn_audio_detail_IAudioDevice_ListAudioOutputDeviceName(SvcObj* self, IpcBuf names, i32* count) {
+    return nn_audio_detail_IAudioDevice_ListAudioDeviceName(self, names, count);
+}
 static int nn_audio_detail_IAudioDevice_GetActiveChannelCount(SvcObj* self, u32* count) {
     (void)self;
     *count = 2;

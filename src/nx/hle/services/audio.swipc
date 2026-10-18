@@ -104,6 +104,8 @@ interface nn::audio::detail::IAudioDevice {
     [12] QueryAudioDeviceOutputEvent() -> handle<copy, event> event;
     # SDK 13 and later: before, 13 was another command (an A buffer in, a u32 out), which this declaration refuses
     [13] GetActiveAudioOutputDeviceName(buffer<nn::audio::AudioDeviceName, 6> name);
+    # SDK 13 and later (nn::audio::ListAudioOutputDeviceName): TotK compares each name with the outputs it knows
+    [14] ListAudioOutputDeviceName(array<nn::audio::AudioDeviceName, 6> names) -> i32 count;
 }
 
 interface nn::audio::detail::IAudioOutManager is audout:u {
