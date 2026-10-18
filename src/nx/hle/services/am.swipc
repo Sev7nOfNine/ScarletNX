@@ -128,7 +128,7 @@ interface nn::am::service::IApplicationFunctions {
     [21] GetDesiredLanguage() -> nn::settings::LanguageCode code;
     @stub [22] SetTerminateResult(u32 result);
     [23] GetDisplayVersion() -> nn::oe::DisplayVersion version;
-    @stub [25] ExtendSaveData(u8 type, nn::account::Uid uid, i64 normal_size, i64 journal_size) -> i64 required_size;
+    [25] ExtendSaveData(u8 type, nn::account::Uid uid, i64 normal_size, i64 journal_size) -> i64 required_size;
     [26] GetSaveDataSize(u8 type, nn::account::Uid uid) -> (i64 normal_size, i64 journal_size);
     @stub [27] CreateCacheStorage(u16 index, i64 normal_size, i64 journal_size)
         -> (u32 target_media, i64 required_size);

@@ -57,6 +57,10 @@ static struct {
     u8* nacp;               /* the game's control.nacp in its data folder, read on first use; NULL with none */
     u64 nacp_size;
     int nacp_read;
+    /* the normal and journal sizes ExtendSaveData gave the account's (0) and the device's (1) save, which
+       GetSaveDataSize answers from then on, for the rest of the run */
+    i64 save_size[2][2];
+    int save_extended[2];
 } am;
 
 void am_init(void) {
@@ -497,14 +501,36 @@ static int nn_am_service_IApplicationFunctions_GetDisplayVersion(SvcObj* self, n
     version->v[15] = 0;
     return 0;
 }
-/* the sizes the NACP gives the account's (type 1) and the device's (3) save data */
+/* the account's (type 1) and the device's (3) save data: the size ExtendSaveData gave it, else the NACP's */
 static int nn_am_service_IApplicationFunctions_GetSaveDataSize(SvcObj* self, u8 type, const nn_account_Uid* uid,
                                                               i64* normal_size, i64* journal_size) {
+    int device = type == 3, extended;
+    (void)self, (void)uid;
+    if (type != 1 && type != 3) return 0;
+    pm_lock(&am.lock);
+    extended = am.save_extended[device];
+    if (extended) {
+        *normal_size = am.save_size[device][0];
+        *journal_size = am.save_size[device][1];
+    }
+    pm_unlock(&am.lock);
+    if (!extended) {
+        *normal_size = (i64)am_nacp_u64(NACP_ACCOUNT_SAVE_SIZE + (device ? 16 : 0));
+        *journal_size = (i64)am_nacp_u64(NACP_ACCOUNT_SAVE_SIZE + 8 + (device ? 16 : 0));
+    }
+    return 0;
+}
+static int nn_am_service_IApplicationFunctions_ExtendSaveData(SvcObj* self, u8 type, const nn_account_Uid* uid,
+                                                              i64 normal_size, i64 journal_size, i64* required_size) {
     (void)self, (void)uid;
     if (type == 1 || type == 3) {
-        *normal_size = (i64)am_nacp_u64(NACP_ACCOUNT_SAVE_SIZE + (type == 3 ? 16 : 0));
-        *journal_size = (i64)am_nacp_u64(NACP_ACCOUNT_SAVE_SIZE + 8 + (type == 3 ? 16 : 0));
+        pm_lock(&am.lock);
+        am.save_size[type == 3][0] = normal_size;
+        am.save_size[type == 3][1] = journal_size;
+        am.save_extended[type == 3] = 1;
+        pm_unlock(&am.lock);
     }
+    *required_size = 0; /* the space still missing, when there isn't enough: there always is */
     return 0;
 }
 static int nn_am_service_IApplicationFunctions_GetLimitedApplicationLicenseUpgradableEvent(SvcObj* self,

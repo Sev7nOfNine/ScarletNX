@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
    Copyright 2026 the ScarletNX contributors */
 /* am.c with a control.nacp: the desired language against its supported-language flags, its display version and
-   save data sizes; then am_service.c's checks, whose stand-ins this reuses */
+   save data sizes, and the sizes ExtendSaveData sets; then am_service.c's checks, whose stand-ins this reuses */
 #define main am_service_main
 #include "am_service.c"
 #undef main
@@ -20,7 +20,7 @@ int main(void) {
     u32 flags;
     u64 v;
     nn_oe_DisplayVersion version;
-    i64 normal = 0, journal = 0;
+    i64 normal = 0, journal = 0, required;
     /* the system's language when the game has it (flags 0: every one), else the first fallback ns tries */
     CHECK(am_desired_language(1, 0) == 1);           /* American English */
     CHECK(am_desired_language(0, 1u << 2) == 0);     /* Japanese, which the game has */
@@ -51,6 +51,19 @@ int main(void) {
     CHECK(normal == 0x4000000 && journal == 0x1000000);
     CHECK(nn_am_service_IApplicationFunctions_GetSaveDataSize(NULL, 3, NULL, &normal, &journal) == 0);
     CHECK(normal == 0x200000 && journal == 0);
+    /* ExtendSaveData's sizes are what GetSaveDataSize answers from then on, for that save only */
+    required = -1;
+    CHECK(nn_am_service_IApplicationFunctions_ExtendSaveData(NULL, 1, NULL, 0x5000000, 0x1400000, &required) == 0);
+    CHECK(required == 0);
+    CHECK(nn_am_service_IApplicationFunctions_GetSaveDataSize(NULL, 1, NULL, &normal, &journal) == 0);
+    CHECK(normal == 0x5000000 && journal == 0x1400000);
+    CHECK(nn_am_service_IApplicationFunctions_GetSaveDataSize(NULL, 3, NULL, &normal, &journal) == 0);
+    CHECK(normal == 0x200000 && journal == 0);
+    CHECK(nn_am_service_IApplicationFunctions_ExtendSaveData(NULL, 3, NULL, 0x300000, 0x100000, &required) == 0);
+    CHECK(nn_am_service_IApplicationFunctions_GetSaveDataSize(NULL, 3, NULL, &normal, &journal) == 0);
+    CHECK(normal == 0x300000 && journal == 0x100000);
+    CHECK(nn_am_service_IApplicationFunctions_GetSaveDataSize(NULL, 1, NULL, &normal, &journal) == 0);
+    CHECK(normal == 0x5000000 && journal == 0x1400000);
     nacp_reset();
     g_test_nacp = NULL;
     CHECK(nn_am_service_IApplicationFunctions_GetDisplayVersion(NULL, &version) == 0);
