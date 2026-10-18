@@ -51,7 +51,7 @@ static void vkr_mapping_begin(u64 gva, u64 size, int full) {
     } else {
         vk_buf_mem_need_map(gva, size);
         vk_gfx_image_mem_need(gva, size);
-        vk_compute_mem_need(gva, size);
+        vk_compute_mem_need_map(gva, size);
     }
 }
 static void vkr_mapping_end(void) { vk_unlock(); }

@@ -21,6 +21,7 @@
 #include "nx/gpu/vk/vk.h"
 #include "nx/gpu/renderer.h"
 #include "nx/gpu/vk/backing.h"
+#include "nx/gpu/vk/pending_pages.h"
 
 typedef struct CsPipe {
     u64 key;
@@ -47,6 +48,12 @@ typedef struct {
 static CsOut g_out[256];
 static int g_nout;
 static u64 g_out_lo = ~0ull, g_out_hi;
+/* the guest pages every pending result covers, the current batch's and those put aside: a read or write of memory no
+   result covers (most of them) is answered without checking each result, through the GMMU page by page */
+static PendPages g_pages;
+static void outs_pages(const CsOut* out, int n, int delta) {
+    for (int i = 0; i < n; i++) pend_add(&g_pages, out[i].addr, out[i].size, delta);
+}
 
 static VkCommandPool g_cpool;
 static VkCommandBuffer g_ccb;
@@ -243,6 +250,8 @@ static void cs_any_update(void) {
     int any = g_nout > 0;
     for (u32 i = g_ptail; i != g_phead && !any; i++) any = g_pend[i % CS_PENDING].nout > 0;
     g_cs_any = any;
+    if (!any && !pend_empty(&g_pages)) /* a result lost pages through other mappings than it gained them through */
+        WARN_LIMIT(1, "vulkan: compute results landed, but their guest pages are still counted\n");
 }
 /* the oldest batch put aside lands: it is done once g_vk_csem reaches its value */
 static void cs_land_oldest(void) {
@@ -252,6 +261,7 @@ static void cs_land_oldest(void) {
     g_landing = 1;
     cs_write_back(b->ar_mem, b->ar_ptr, b->org, b->out, b->nout);
     g_landing = was;
+    outs_pages(b->out, b->nout, -1);
     vkResetDescriptorPool(g_vk.dev, b->dpool, 0);
     cs_arena_done(b->ar, b->ar_mem, b->ar_ptr, b->ar_cap, b->gfx);
     b->ar = VK_NULL_HANDLE;
@@ -329,6 +339,7 @@ static void cs_land(void) {
     cs_wait(g_cval);
     g_inflight = 0;
     cs_write_back(g_ar_mem, g_ar_ptr, g_org, g_out, g_nout);
+    outs_pages(g_out, g_nout, -1);
     /* only now: until the results are in memory, readers on other threads wait for this landing in
        vk_compute_mem_need */
     g_nout = 0;
@@ -357,7 +368,7 @@ static void cs_abandon_binding(u8* originals[8]) {
    batch. Any other overlap lands the results now, so the caller's caches see them in memory */
 int vk_compute_gpu_src(u64 gva, u64 len, VkBuffer* buf, u64* off) {
     u32 k;
-    if (!g_cs_any || g_landing) return 0;
+    if (!g_cs_any || g_landing || !pend_hit(&g_pages, gva, len)) return 0;
     for (int i = 0; i < g_nout; i++) {
         CsOut* o = &g_out[i];
         if (gva >= o->addr + o->size || o->addr >= gva + len) {
@@ -437,11 +448,9 @@ void vk_compute_before_write(u64 gva, u64 size) {
    g_cs_any is set: the pending results are looked at under vk_lock, which recording and landing them hold, so a
    reader waits for a landing in progress on another thread. The landing thread itself passes (g_landing). A result of
    a batch put aside lands that batch and those before it */
-void vk_compute_mem_need(u64 a, u64 n) {
-    u32 k, last;
+static void cs_mem_need(u64 a, u64 n) {
+    u32 k, last = g_ptail;
     int found = 0;
-    vk_lock();
-    last = g_ptail;
     if (!g_landing) {
         for (k = g_ptail; k != g_phead; k++) {
             const CsBatch* b = &g_pend[k % CS_PENDING];
@@ -458,6 +467,17 @@ void vk_compute_mem_need(u64 a, u64 n) {
                 break;
             }
     }
+}
+void vk_compute_mem_need(u64 a, u64 n) {
+    vk_lock();
+    if (pend_hit(&g_pages, a, n)) cs_mem_need(a, n);
+    vk_unlock();
+}
+/* the GMMU is about to change [a, a + n): every result there lands with the mappings it covered its pages through,
+   including one that overlaps it only on GPU pages that weren't mapped, which covered no page */
+void vk_compute_mem_need_map(u64 a, u64 n) {
+    vk_lock();
+    cs_mem_need(a, n);
     vk_unlock();
 }
 
@@ -769,6 +789,7 @@ void vk_dispatch(GpuChannel* ch, const u32* q, u64 code) {
     i64 chain[16];
     for (int i = 0; i < ng; i++) {
         chain[i] = -1;
+        if (!pend_hit(&g_pages, sa[i], ss[i])) continue;
         for (int k = 0; k < g_nout && !overlap; k++) {
             CsOut* o = &g_out[k];
             if (sa[i] >= o->addr + o->size || o->addr >= sa[i] + ss[i]) {
@@ -1111,6 +1132,7 @@ rebind:
         if (((p->si.gbuf_wmask >> i) & 1) && sa[i]) {
             memcpy(g_org + so[i], g_ar_ptr + so[i], ss[i]);
             g_out[g_nout++] = (CsOut){sa[i], so[i], ss[i]};
+            pend_add(&g_pages, sa[i], ss[i], 1);
             if (sa[i] < g_out_lo) g_out_lo = sa[i];
             if (sa[i] + ss[i] > g_out_hi) g_out_hi = sa[i] + ss[i];
         }
@@ -1125,6 +1147,7 @@ rebind:
             g_out[g_nout].off = bufimg_off[i];
             g_out[g_nout].size = bimg[i].bytes;
             g_nout++;
+            pend_add(&g_pages, bimg[i].gva, bimg[i].bytes, 1);
             if (bimg[i].gva < g_out_lo) g_out_lo = bimg[i].gva;
             if (bimg[i].gva + bimg[i].bytes > g_out_hi) g_out_hi = bimg[i].gva + bimg[i].bytes;
         }
@@ -1180,6 +1203,7 @@ rebind:
         g_landing = 1;
         for (int i = 0; i < g_nout; i++)
             vk_write_changed(g_out[i].addr, g_ar_ptr + g_out[i].off, g_org + g_out[i].off, g_out[i].size);
+        outs_pages(g_out, g_nout, -1);
         for (i = 0; i < p->si.nimg && i < 8; i++)
             if (bufimg_view[i]) vkDestroyBufferView(g_vk.dev, bufimg_view[i], NULL);
         for (int i = 0; i < p->si.nimg; i++) {

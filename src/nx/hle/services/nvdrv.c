@@ -144,6 +144,28 @@ u64 gmmu_translate(u64 gva) {
     if (!(e & 1)) return 0;
     return (e & ~(u64)0xFFF) | (gva & 0xFFF);
 }
+/* the bytes from gva on, at most max, whose pages map to consecutive guest pages, and in *cpu the guest address of gva:
+   0 when gva's page isn't mapped. One walk of the table for a range, where gmmu_translate per page walks it again */
+u64 gmmu_run(u64 gva, u64 max, u64* cpu) {
+    u64 page = gva >> GPAGE_BITS, n, e, want;
+    u64* t = __atomic_load_n(&nv.gmmu[gmmu_l1_index(page)], __ATOMIC_ACQUIRE);
+    if (!max || !t) return 0;
+    e = __atomic_load_n(&t[page & ((1u << GL2_BITS) - 1)], __ATOMIC_RELAXED);
+    if (!(e & 1)) return 0;
+    *cpu = (e & ~(u64)0xFFF) | (gva & 0xFFF);
+    n = 0x1000 - (gva & 0xFFF);
+    want = (e & ~(u64)0xFFF) + 0x1000;
+    while (n < max) {
+        page++;
+        if (!(page & ((1u << GL2_BITS) - 1))) t = __atomic_load_n(&nv.gmmu[gmmu_l1_index(page)], __ATOMIC_ACQUIRE);
+        if (!t) break;
+        e = __atomic_load_n(&t[page & ((1u << GL2_BITS) - 1)], __ATOMIC_RELAXED);
+        if (!(e & 1) || (e & ~(u64)0xFFF) != want) break;
+        n += 0x1000;
+        want += 0x1000;
+    }
+    return n < max ? n : max;
+}
 static u64* gmmu_l2(u32 i) {
     u64* t = __atomic_load_n(&nv.gmmu[i], __ATOMIC_ACQUIRE);
     if (t) return t;
