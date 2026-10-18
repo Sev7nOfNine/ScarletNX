@@ -34,6 +34,12 @@ static void test_fail(const char* expression, int line) {
 void pm_init(PMutex* m) { (void)m; }
 void pm_lock(PMutex* m) { (void)m; }
 void pm_unlock(PMutex* m) { (void)m; }
+/* no data folder here: no add-on content is installed */
+FILE* fs_open_read(const char* path, u64* size) {
+    (void)path;
+    if (size) *size = 0;
+    return NULL;
+}
 void logf_(int level, const char* format, ...) {
     (void)level;
     (void)format;
