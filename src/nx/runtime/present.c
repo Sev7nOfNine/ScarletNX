@@ -5,6 +5,7 @@
 /* vi's framebuffers: handed to the renderer, and the pace the game's frames are shown at */
 #include "nx/runtime/main.h"
 #include "nx/runtime/options.h"
+#include "nx/runtime/cheats.h"
 #include "nx/gpu/gpu.h"
 #include "nx/gpu/renderer.h"
 #include "nx/hle/services/nvdrv.h"
@@ -76,6 +77,7 @@ void vi_show_buffer(u32 nvmap_id, u32 offset, u32 w, u32 h, u32 pitch, u32 layou
     /* the renderer runs before the game's first thread does: video_init ends the run when it can't start */
     g_renderer->present_buffer(a + offset, w, h, pitch, layout, bhl, fmt, crop, transform);
     __atomic_add_fetch(&g_frames, 1, __ATOMIC_RELAXED);
+    cheats_frame(); /* the cheats run once per frame shown, as dmnt's run on the console */
 }
 /* fps_limit=game: the console's display keeps each frame for the swap interval it was queued with, so a game made
    for 30 FPS (interval 2) runs at 30, and its game thread waits for a buffer until then. This wait is that one, before
