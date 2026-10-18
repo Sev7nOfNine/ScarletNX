@@ -216,6 +216,8 @@ interface nn::nfp::detail::IUser {
     [22] GetApplicationAreaSize(nn::nfc::DeviceHandle device_handle) -> u32 size;
     [23] AttachAvailabilityChangeEvent() -> handle<copy, event> event;
     [24] RecreateApplicationArea(nn::nfc::DeviceHandle device_handle, u32 access_id, buffer<u8, 5> data);
+    # 23.0.0+, which a game built for it sends instead of 3; the filter after the device is not read
+    [25] StartDetectionWithFilter(nn::nfc::DeviceHandle device_handle);
 }
 # nfc's own IUser: the commands before 400 are the old numbers of 400 to 403. The Mifare and pass-through commands
 # need a device, and there is none

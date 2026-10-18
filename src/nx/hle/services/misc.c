@@ -523,6 +523,9 @@ static int nn_nfp_detail_IUser_RecreateApplicationArea(SvcObj* self, const nn_nf
     (void)device_handle, (void)access_id, (void)data;
     return nfp_device(self);
 }
+static int nn_nfp_detail_IUser_StartDetectionWithFilter(SvcObj* self, const nn_nfc_DeviceHandle* device_handle) {
+    return nn_nfp_detail_IUser_StartDetection(self, device_handle);
+}
 
 static int nn_nfc_detail_IUser_Initialize(SvcObj* self, u64 applet_resource_user_id, u64 pid,
                                          IpcBuf mcu_version_data) {

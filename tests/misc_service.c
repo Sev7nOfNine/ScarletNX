@@ -669,6 +669,35 @@ static void test_ldn_monitor(void) {
     svcobj_unref(ldn);
 }
 
+/* nfp's StartDetectionWithFilter (25, 23.0.0+) answers what StartDetection (3) does for the same device, before and
+   after Initialize {aruid, pid, buffer}; the filter word after the device is not read */
+static void test_nfp_filter(void) {
+    SvcObj* manager = new_nfp();
+    Request r;
+    request(&r, 0);
+    call(manager, &r);
+    CHECK(r.c.nout_objs == 1);
+    SvcObj* user = r.c.out_objs[0];
+    for (int initialized = 0; initialized < 2; initialized++) {
+        if (initialized) {
+            request(&r, 0);
+            r.c.has_pid = 1;
+            r.c.na = 1;
+            call(user, &r);
+        }
+        int answers[2];
+        for (int i = 0; i < 2; i++) {
+            request(&r, i ? 25 : 3);
+            argument32(&r, 0, 0x20);
+            argument32(&r, 8, 0xFFFFFFFFu);
+            answers[i] = user->dispatch(user, &r.c);
+        }
+        CHECK(answers[0] == answers[1] && answers[0] == (initialized ? NFP_DEVICE_NOT_FOUND : NFP_NFC_DISABLED));
+    }
+    svcobj_unref(user);
+    svcobj_unref(manager);
+}
+
 int main(void) {
     g_mem = calloc(1, 0x10000);
     CHECK(g_mem != NULL);
@@ -677,6 +706,7 @@ int main(void) {
     test_mii_default();
     test_acc_select();
     test_ldn_monitor();
+    test_nfp_filter();
     CHECK(test_objects == 0 && test_kobjs == 0);
     free(g_mem);
     printf("misc_service: %u checks passed\n", test_checks);
