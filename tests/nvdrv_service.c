@@ -314,6 +314,20 @@ static void test_ioctl2(u32 gpu) {
     ctx.a[1] = buf(IN1, 8);
     CHECK(nvdrv->dispatch(nvdrv, &ctx) == 0 && reply(0) == 0);
     CHECK(test_gpu.submits == 5 && test_gpu.wait_id == 7 && test_gpu.wait_val == 0x1234);
+
+    /* IncrementWithValue (0x100) with FenceIncrement: the entries increment fval times themselves, so the job adds only
+       the host's two, while the fence promises all five */
+    fence[1] = 3;
+    flags = 0x102;
+    memcpy(h + 12, &flags, 4);
+    memcpy(h + 16, fence, 8);
+    memcpy(GP(IN0), h, sizeof h);
+    request(11, gpu, SUBMIT_GPFIFO_EX);
+    ctx.a[0] = buf(IN0, 0x18);
+    ctx.a[1] = buf(IN1, 8);
+    ctx.b[0] = buf(OUT0, 0x18);
+    CHECK(nvdrv->dispatch(nvdrv, &ctx) == 0 && reply(0) == 0);
+    CHECK(test_gpu.submits == 6 && test_gpu.incs == 2 && test_gpu.expect == 9 && gr32(OUT0 + 20) == 9);
 }
 
 /* the ctrl device's syncpoint ioctls: an increment wakes the GPU thread (gpu_kick), an id past the table is
