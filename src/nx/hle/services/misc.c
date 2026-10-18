@@ -843,6 +843,11 @@ static int nn_ldn_detail_IUserServiceCreator_CreateUserLocalCommunicationService
     *service = nn_ldn_detail_IUserLocalCommunicationService_new(sizeof(u32));
     return 0;
 }
+static int nn_ldn_detail_IUserServiceCreator_CreateClientProcessMonitor(SvcObj* self, SvcObj** monitor) {
+    (void)self;
+    *monitor = nn_ldn_detail_IClientProcessMonitor_new(0);
+    return 0;
+}
 /* nn::ldn::State: 0 none, 1 initialized */
 static int nn_ldn_detail_IUserLocalCommunicationService_GetState(SvcObj* self, u32* state) {
     *state = __atomic_load_n((u32*)self->data, __ATOMIC_ACQUIRE);

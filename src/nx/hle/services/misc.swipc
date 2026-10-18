@@ -370,6 +370,11 @@ interface nn::mii::detail::IDatabaseService {
 # station, scanning and connecting are not implemented and log
 interface nn::ldn::detail::IUserServiceCreator is ldn:u {
     [0] CreateUserLocalCommunicationService() -> object<nn::ldn::detail::IUserLocalCommunicationService> service;
+    # 18.0.0+: libnx's ldnInitialize asks for it and registers its process before anything else
+    [1] CreateClientProcessMonitor() -> object<nn::ldn::detail::IClientProcessMonitor> monitor;
+}
+interface nn::ldn::detail::IClientProcessMonitor {
+    @stub [0] RegisterClient(pid);
 }
 interface nn::ldn::detail::IUserLocalCommunicationService {
     [0] GetState() -> u32 state;

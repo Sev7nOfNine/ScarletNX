@@ -650,6 +650,25 @@ static void test_acc_select(void) {
     svcobj_unref(acc);
 }
 
+/* ldn:u's CreateClientProcessMonitor (1, 18.0.0+) gives the monitor libnx's ldnInitialize registers its process
+   with: RegisterClient (0), the pid and its word in the raw data, nothing else */
+static void test_ldn_monitor(void) {
+    SvcObj* ldn = new_ldn();
+    Request r;
+    request(&r, 1);
+    call(ldn, &r);
+    CHECK(r.c.nout_objs == 1 && r.c.out_objs[0] != NULL);
+    SvcObj* monitor = r.c.out_objs[0];
+    request(&r, 0);
+    r.c.raw_size = 8;
+    r.c.pid = 0x51;
+    r.c.has_pid = 1;
+    call(monitor, &r);
+    CHECK(r.c.out_size == 0);
+    svcobj_unref(monitor);
+    svcobj_unref(ldn);
+}
+
 int main(void) {
     g_mem = calloc(1, 0x10000);
     CHECK(g_mem != NULL);
@@ -657,6 +676,7 @@ int main(void) {
     test_hid();
     test_mii_default();
     test_acc_select();
+    test_ldn_monitor();
     CHECK(test_objects == 0 && test_kobjs == 0);
     free(g_mem);
     printf("misc_service: %u checks passed\n", test_checks);
