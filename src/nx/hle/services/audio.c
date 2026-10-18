@@ -684,7 +684,15 @@ static void hwopus_free(HwOpus* h) {
     h->acc = NULL;
 }
 
-static void hwopus_destroy(SvcObj* o) { hwopus_free(o->data); }
+/* the firmware keeps 24 decoders and refuses the next with OutOfOpusDecoders, which sends the SDK to its software
+   decoder; a game that opens decoders until refused depends on that answer */
+#define SNX_HWOPUS_MAX_DECODERS 24
+static u32 hwopus_live; /* decoders open, across every hwopus session */
+
+static void hwopus_destroy(SvcObj* o) {
+    hwopus_free(o->data);
+    __atomic_sub_fetch(&hwopus_live, 1, __ATOMIC_RELAXED);
+}
 
 /* opens h for rate and channels: one stream (mapping NULL), or streams of them with stereo_streams coupled and
    mapping placing their channels. 0 when it can't be */
@@ -885,11 +893,17 @@ static int work_size(u32 rate, u32 channels, u32 streams, u32 stereo_streams, in
 
 static int open_decoder(u32 rate, u32 channels, u32 streams, u32 stereo_streams, const u8* mapping,
                         SvcObj** decoder) {
-    SvcObj* o = nn_codec_detail_IHardwareOpusDecoder_new(sizeof(HwOpus));
+    SvcObj* o;
+    if (__atomic_add_fetch(&hwopus_live, 1, __ATOMIC_RELAXED) > SNX_HWOPUS_MAX_DECODERS) {
+        __atomic_sub_fetch(&hwopus_live, 1, __ATOMIC_RELAXED);
+        return OPUS_OUT_OF_DECODERS;
+    }
+    o = nn_codec_detail_IHardwareOpusDecoder_new(sizeof(HwOpus));
     if (!hwopus_open(o->data, rate, channels, streams, stereo_streams, mapping)) {
         WARN_LIMIT(4, "hwopus: can't open a decoder of %lu channels at %lu Hz\n", (unsigned long)channels,
                    (unsigned long)rate);
         svcobj_unref(o);
+        __atomic_sub_fetch(&hwopus_live, 1, __ATOMIC_RELAXED);
         return OPUS_OUT_OF_DECODERS;
     }
     o->destroy = hwopus_destroy;

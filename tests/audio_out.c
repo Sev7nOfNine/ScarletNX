@@ -597,8 +597,7 @@ static void test_opus_decode(void) {
         CHECK(loud); /* the tone, still there after the switch to CELT */
     }
     CHECK(hwopus_decode(&h, opus_tone, 8, out, sizeof out, 0, &consumed, &samples) == RC(111, 17)); /* no payload */
-    SvcObj o = {.data = &h};
-    hwopus_destroy(&o);
+    hwopus_free(&h); /* opened by hand, so it holds none of the service's decoder slots */
 }
 #endif
 static void test_hwopus(void) {
@@ -617,6 +616,21 @@ static void test_hwopus(void) {
     CHECK(open_opus(manager, 24000, 1, &decoder) == 0 && ((HwOpus*)decoder->data)->step == 2);
     svcobj_unref(decoder);
     CHECK(open_opus(manager, 44100, 2, &decoder) == RC(111, 385)); /* not a rate Opus decodes at */
+    /* 24 live decoders, from any session; the 25th is refused as out of decoders until one closes */
+    SvcObj* other = new_hwopus();
+    SvcObj* live[24];
+    for (u32 i = 0; i < 24; i++) CHECK(open_opus(i & 1 ? other : manager, 48000, 2, &live[i]) == 0);
+    unsigned held = test_objects;
+    CHECK(open_opus(manager, 48000, 2, &decoder) == RC(111, 385));
+    CHECK(open_opus(other, 48000, 1, &decoder) == RC(111, 385));
+    CHECK(test_objects == held);
+    svcobj_unref(live[5]);
+    CHECK(open_opus(manager, 48000, 2, &live[5]) == 0);
+    CHECK(open_opus(manager, 48000, 2, &decoder) == RC(111, 385));
+    for (u32 i = 0; i < 24; i++) svcobj_unref(live[i]);
+    CHECK(open_opus(other, 48000, 2, &decoder) == 0);
+    svcobj_unref(decoder);
+    svcobj_unref(other);
     test_opus_decode();
 #else
     CHECK(open_opus(manager, 48000, 2, &decoder) == RC(111, 385)); /* this build has no Opus decoder */
